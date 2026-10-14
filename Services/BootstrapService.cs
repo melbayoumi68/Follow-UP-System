@@ -47,7 +47,8 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     x.SignDate,
                     x.Status,
                     x.ContractDuration,
-                    x.EndDate // <--- ضفناها هنا في الآخر
+                    x.EndDate,
+                    x.PaymentValue
                 ))
                 .ToListAsync(ct),
 
@@ -240,7 +241,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                 new Owner
                 {
                     Id = id,
-                    Name = owner.Name!.Trim(),
+                    Name = Clip(owner.Name, 250)!,
                     Phone = owner.Phone,
                     Email = owner.Email
                 });
@@ -435,7 +436,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     })
                 .ToList();
 
-            // FIX: DateOnly? → DateTime
+            // FIX: DateOnly? â†’ DateTime
             var invoiceDate = invoice.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
             var invoiceDueDate = invoice.DueDate ?? invoiceDate;
 
@@ -513,7 +514,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         foreach (var position in validExecPositions)
         {
-            // FIX: DateOnly? → DateTime
+            // FIX: DateOnly? â†’ DateTime
             var positionDate = position.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
             db.ExecPositions.Add(
@@ -731,12 +732,17 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
         await tx.CommitAsync(ct);
     }
 
-    public async Task UpsertAsync(
+    public async Task<IReadOnlyList<string>> UpsertAsync(
         BootstrapDto dto,
         CancellationToken ct)
     {
         if (dto is null)
             throw new ArgumentException("Bootstrap payload is null.");
+
+        var warnings = new List<string>();
+        var skippedProjects = 0;
+        var skippedContracts = 0;
+        var skippedInvoices = 0;
 
         var owners = dto.Owners ?? [];
         var projects = dto.Projects ?? [];
@@ -788,13 +794,9 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
             .Select(x => x.InvoiceDeductionId).ToListAsync(ct))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var existingDeductionLibIds = (await db.DeductionLibraryItems
-            .Select(x => x.Id).ToListAsync(ct))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
         /*
          * =========================================================
-         * OWNERS — UPSERT
+         * OWNERS â€” UPSERT
          * =========================================================
          */
 
@@ -818,7 +820,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                 var existing = await db.Owners.FindAsync([id], ct);
                 if (existing is not null)
                 {
-                    existing.Name = owner.Name!.Trim();
+                    existing.Name = Clip(owner.Name, 250)!;
                     existing.Phone = owner.Phone;
                     existing.Email = owner.Email;
                 }
@@ -828,7 +830,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                 db.Owners.Add(new Owner
                 {
                     Id = id,
-                    Name = owner.Name!.Trim(),
+                    Name = Clip(owner.Name, 250)!,
                     Phone = owner.Phone,
                     Email = owner.Email
                 });
@@ -842,17 +844,52 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         /*
          * =========================================================
-         * PROJECTS — UPSERT
+         * PROJECTS â€” UPSERT
          * =========================================================
          */
 
-        var validProjects = projects
+        var sectorLookupOk = false;
+        HashSet<int> validSectorIds = [];
+        HashSet<int> validManagerIds = [];
+        try
+        {
+            validSectorIds = (await db.Sectors.Select(s => s.SectorId).ToListAsync(ct)).ToHashSet();
+            validManagerIds = (await db.SectorManagers.Select(s => s.SectorManagerId).ToListAsync(ct)).ToHashSet();
+            sectorLookupOk = true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Bootstrap] Sector lookup skipped: {ex.Message}");
+        }
+
+        int? SafeSector(int? id)
+        {
+            if (id is not > 0) return null;
+            if (!sectorLookupOk) return id;
+            return validSectorIds.Contains(id.Value) ? id : null;
+        }
+
+        int? SafeManager(int? id)
+        {
+            if (id is not > 0) return null;
+            if (!sectorLookupOk) return id;
+            return validManagerIds.Contains(id.Value) ? id : null;
+        }
+
+        var projectCandidates = projects
             .Where(x =>
                 !string.IsNullOrWhiteSpace(x.Id) &&
-                !string.IsNullOrWhiteSpace(x.OwnerId) &&
-                !string.IsNullOrWhiteSpace(x.Name) &&
-                (existingOwnerIds.Contains(x.OwnerId) || ownerIds.Contains(x.OwnerId)))
+                !string.IsNullOrWhiteSpace(x.Name))
             .ToList();
+        var validProjects = projectCandidates
+            .Where(x =>
+            {
+                var ownerId = Tid(x.OwnerId);
+                return ownerId.Length > 0 &&
+                       (existingOwnerIds.Contains(ownerId) || ownerIds.Contains(ownerId));
+            })
+            .ToList();
+        skippedProjects += projectCandidates.Count - validProjects.Count;
 
         var generatedProjectIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -863,18 +900,21 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
             if (!seenProjectIds.Add(id))
                 continue;
 
-            var ownerId = (project.OwnerId ?? "").Trim();
+            var ownerId = Tid(project.OwnerId);
+            var projectName = Clip(project.Name, 300) ?? "";
+            var sectorId = SafeSector(project.SectorId);
+            var sectorManagerId = SafeManager(project.SectorManagerId);
             if (existingProjectIds.Contains(id))
             {
                 var existing = await db.Projects.FindAsync([id], ct);
                 if (existing is not null)
                 {
                     existing.OwnerId = ownerId;
-                    existing.Name = project.Name!.Trim();
+                    existing.Name = projectName;
                     existing.StartDate = project.StartDate;
                     existing.Status = project.Status;
-                    existing.SectorId = project.SectorId;
-                    existing.SectorManagerId = project.SectorManagerId;
+                    existing.SectorId = sectorId;
+                    existing.SectorManagerId = sectorManagerId;
                 }
             }
             else
@@ -883,11 +923,11 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                 {
                     Id = id,
                     OwnerId = ownerId,
-                    Name = project.Name!.Trim(),
+                    Name = projectName,
                     StartDate = project.StartDate,
                     Status = project.Status,
-                    SectorId = project.SectorId,
-                    SectorManagerId = project.SectorManagerId
+                    SectorId = sectorId,
+                    SectorManagerId = sectorManagerId
                 });
                 existingProjectIds.Add(id);
             }
@@ -899,7 +939,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         /*
          * =========================================================
-         * CONTRACTS — UPSERT
+         * CONTRACTS â€” UPSERT
          * =========================================================
          */
 
@@ -907,27 +947,35 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
         var effectiveProjectIds = new HashSet<string>(existingProjectIds, StringComparer.OrdinalIgnoreCase);
         foreach (var pid in projectIds) effectiveProjectIds.Add(pid);
 
-        var validContracts = contracts
+        var contractCandidates = contracts
             .Where(x =>
                 !string.IsNullOrWhiteSpace(x.Id) &&
-                !string.IsNullOrWhiteSpace(x.ProjectId) &&
-                !string.IsNullOrWhiteSpace(x.Name) &&
-                effectiveProjectIds.Contains(x.ProjectId))
+                !string.IsNullOrWhiteSpace(x.Name))
             .ToList();
+        var validContracts = contractCandidates
+            .Where(x =>
+            {
+                var projectId = Tid(x.ProjectId);
+                return projectId.Length > 0 && effectiveProjectIds.Contains(projectId);
+            })
+            .ToList();
+        skippedContracts += contractCandidates.Count - validContracts.Count;
 
         var generatedContractIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var contract in validContracts)
         {
             var id = NormalizeId(contract.Id, generatedContractIds);
+            var projectId = Tid(contract.ProjectId);
+            var contractName = Clip(contract.Name, 300) ?? "";
             if (existingContractIds.Contains(id))
             {
                 var existing = await db.Contracts.FindAsync([id], ct);
                 if (existing is not null)
                 {
                     var duration = contract.ContractDuration > 0 ? contract.ContractDuration : 0;
-                    existing.ProjectId = contract.ProjectId;
-                    existing.Name = contract.Name.Trim();
+                    existing.ProjectId = projectId;
+                    existing.Name = contractName;
                     existing.Amount = contract.Amount;
                     existing.ModifiedAmount = contract.ModifiedAmount < 0 ? 0 : contract.ModifiedAmount;
                     existing.VoAmount = contract.VoAmount < 0 ? 0 : contract.VoAmount;
@@ -948,8 +996,8 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                 db.Contracts.Add(new Contract
                 {
                     Id = id,
-                    ProjectId = contract.ProjectId,
-                    Name = contract.Name.Trim(),
+                    ProjectId = projectId,
+                    Name = contractName,
                     Amount = contract.Amount,
                     ModifiedAmount = contract.ModifiedAmount < 0 ? 0 : contract.ModifiedAmount,
                     VoAmount = contract.VoAmount < 0 ? 0 : contract.VoAmount,
@@ -972,7 +1020,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         /*
          * =========================================================
-         * INVOICES — UPSERT (with items & deductions)
+         * INVOICES â€” UPSERT (with items & deductions)
          * =========================================================
          */
 
@@ -980,50 +1028,63 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
         var effectiveContractIds = new HashSet<string>(existingContractIds, StringComparer.OrdinalIgnoreCase);
         foreach (var cid in contractIds) effectiveContractIds.Add(cid);
 
-        var validInvoices = invoices
+        var invoiceCandidates = invoices
             .Where(x =>
                 !string.IsNullOrWhiteSpace(x.Id) &&
-                !string.IsNullOrWhiteSpace(x.ContractId) &&
-                !string.IsNullOrWhiteSpace(x.Number) &&
-                effectiveContractIds.Contains(x.ContractId))
+                !string.IsNullOrWhiteSpace(x.Number))
             .ToList();
+        var validInvoices = invoiceCandidates
+            .Where(x =>
+            {
+                var contractId = Tid(x.ContractId);
+                return contractId.Length > 0 && effectiveContractIds.Contains(contractId);
+            })
+            .ToList();
+        skippedInvoices += invoiceCandidates.Count - validInvoices.Count;
 
         var generatedInvoiceIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var invoiceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var invoiceIdAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var liveDeductionIds = (await db.InvoiceDeductions.AsNoTracking()
+                .Select(d => d.Id)
+                .ToListAsync(ct))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var invoiceIdByContractNumber = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in await db.Invoices.AsNoTracking()
+                     .Select(x => new { x.Id, x.ContractId, x.Number })
+                     .ToListAsync(ct))
+        {
+            invoiceIdByContractNumber[$"{row.ContractId}\n{row.Number}"] = row.Id;
+        }
 
         foreach (var invoice in validInvoices)
         {
-            var invoiceId = NormalizeId(invoice.Id, generatedInvoiceIds);
+            var originalId = NormalizeId(invoice.Id, generatedInvoiceIds);
+            var contractId = Tid(invoice.ContractId);
+            var number = Clip(invoice.Number, 100);
+            if (number is null)
+            {
+                skippedInvoices++;
+                continue;
+            }
+
+            var invoiceId = originalId;
+            var dupKey = contractId + "\n" + number;
+            if (invoiceIdByContractNumber.TryGetValue(dupKey, out var duplicateId) &&
+                !string.Equals(duplicateId, invoiceId, StringComparison.OrdinalIgnoreCase))
+            {
+                invoiceId = duplicateId;
+            }
+
+            invoiceIdAliases[originalId] = invoiceId;
+            invoiceIdByContractNumber[dupKey] = invoiceId;
+            invoiceIds.Add(invoiceId);
+
             var invoiceDate = invoice.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
             var invoiceDueDate = invoice.DueDate ?? invoiceDate;
-
-            var invoiceItems = (invoice.Items ?? [])
-                .Where(item => !string.IsNullOrWhiteSpace(item.Description))
-                .Select(item => new InvoiceItem
-                {
-                    Id = string.IsNullOrWhiteSpace(item.Id) ? GenerateId() : item.Id,
-                    Description = item.Description!.Trim(),
-                    Qty = item.Qty,
-                    Rate = item.Rate,
-                    Total = item.Total,
-                    CurrentTotal = item.CurrentTotal
-                })
-                .ToList();
-
-            var invoiceDeductions = (invoice.Deductions ?? [])
-                .Where(d => !string.IsNullOrWhiteSpace(d.Description))
-                .Select(d => new InvoiceDeduction
-                {
-                    Id = string.IsNullOrWhiteSpace(d.Id) ? GenerateId() : d.Id,
-                    Description = d.Description!.Trim(),
-                    CalcType = d.CalcType,
-                    Val = d.Val,
-                    Amount = d.Amount,
-                    IsRefundable = d.IsRefundable,
-                    CalcFromKeysJson = d.CalcFromKeys == null
-                        ? null
-                        : System.Text.Json.JsonSerializer.Serialize(d.CalcFromKeys)
-                })
-                .ToList();
+            // null means "sheet omitted this collection â€” keep what is already stored".
+            var invoiceItems = invoice.Items is null ? null : MapInvoiceItems(invoice.Items);
+            var invoiceDeductions = invoice.Deductions is null ? null : MapInvoiceDeductions(invoice.Deductions);
 
             if (existingInvoiceIds.Contains(invoiceId))
             {
@@ -1034,8 +1095,8 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
                 if (existing is not null)
                 {
-                    existing.ContractId = invoice.ContractId;
-                    existing.Number = invoice.Number!.Trim();
+                    existing.ContractId = contractId;
+                    existing.Number = number;
                     existing.Date = invoiceDate;
                     existing.DueDate = invoiceDueDate;
                     existing.Status = invoice.Status;
@@ -1048,20 +1109,24 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     existing.Claims = invoice.Claims;
                     existing.Vat = invoice.Vat;
 
-                    // Replace items and deductions for this invoice
-                    if (existing.Items.Any()) db.InvoiceItems.RemoveRange(existing.Items);
-                    if (existing.Deductions.Any()) db.InvoiceDeductions.RemoveRange(existing.Deductions);
-                    existing.Items = invoiceItems;
-                    existing.Deductions = invoiceDeductions;
+                    if (invoiceItems is not null)
+                        SyncInvoiceItems(db, existing, invoiceItems);
+                    if (invoiceDeductions is not null)
+                        await SyncInvoiceDeductionsAsync(existing, invoiceDeductions, liveDeductionIds, ct);
                 }
             }
             else
             {
+                var createdItems = invoiceItems ?? [];
+                var createdDeductions = invoiceDeductions ?? [];
+                foreach (var deduction in createdDeductions)
+                    liveDeductionIds.Add(deduction.Id);
+
                 db.Invoices.Add(new Invoice
                 {
                     Id = invoiceId,
-                    ContractId = invoice.ContractId,
-                    Number = invoice.Number!.Trim(),
+                    ContractId = contractId,
+                    Number = number,
                     Date = invoiceDate,
                     DueDate = invoiceDueDate,
                     Status = invoice.Status,
@@ -1073,38 +1138,36 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     Materials = invoice.Materials,
                     Claims = invoice.Claims,
                     Vat = invoice.Vat,
-                    Items = invoiceItems,
-                    Deductions = invoiceDeductions
+                    Items = createdItems,
+                    Deductions = createdDeductions
                 });
+                existingInvoiceIds.Add(invoiceId);
             }
         }
 
-        var invoiceIds = validInvoices
-            .Select(x => NormalizeId(x.Id, generatedInvoiceIds))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
         /*
          * =========================================================
-         * EXECUTION POSITIONS — UPSERT
+         * EXECUTION POSITIONS â€” UPSERT
          * =========================================================
          */
 
         var validExecPositions = execPositions
             .Where(x =>
                 !string.IsNullOrWhiteSpace(x.Id) &&
-                !string.IsNullOrWhiteSpace(x.ContractId) &&
-                effectiveContractIds.Contains(x.ContractId))
+                Tid(x.ContractId).Length > 0 &&
+                effectiveContractIds.Contains(Tid(x.ContractId)))
             .ToList();
 
         foreach (var position in validExecPositions)
         {
-            var posId = position.Id!;
+            var posId = Tid(position.Id);
+            var positionContractId = Tid(position.ContractId);
             if (existingExecPositionIds.Contains(posId))
             {
                 var existing = await db.ExecPositions.FindAsync([posId], ct);
                 if (existing is not null)
                 {
-                    existing.ContractId = position.ContractId;
+                    existing.ContractId = positionContractId;
                     existing.VersionNumber = position.VersionNumber;
                     existing.Date = position.Date ?? DateOnly.FromDateTime(DateTime.UtcNow);
                     existing.User = position.User;
@@ -1120,7 +1183,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
             {
                 // Check unique constraint on (ContractId, VersionNumber)
                 var duplicate = await db.ExecPositions
-                    .FirstOrDefaultAsync(x => x.ContractId == position.ContractId && x.VersionNumber == position.VersionNumber, ct);
+                    .FirstOrDefaultAsync(x => x.ContractId == positionContractId && x.VersionNumber == position.VersionNumber, ct);
                 if (duplicate is not null)
                 {
                     // Update the existing record with this contract+version
@@ -1138,7 +1201,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     db.ExecPositions.Add(new ExecPosition
                     {
                         Id = posId,
-                        ContractId = position.ContractId,
+                        ContractId = positionContractId,
                         VersionNumber = position.VersionNumber,
                         Date = position.Date ?? DateOnly.FromDateTime(DateTime.UtcNow),
                         User = position.User,
@@ -1155,25 +1218,27 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         /*
          * =========================================================
-         * SOCIAL INSURANCE CONTRACTS — UPSERT
+         * SOCIAL INSURANCE CONTRACTS â€” UPSERT
          * =========================================================
          */
 
         var validSocialContracts = socialInsuranceContracts
-            .Where(x => !string.IsNullOrWhiteSpace(x.ContractId) && effectiveContractIds.Contains(x.ContractId))
+            .Where(x => effectiveContractIds.Contains(Tid(x.ContractId)))
             .ToList();
 
         foreach (var item in validSocialContracts)
         {
+            var contractId = Tid(item.ContractId);
+            var fileRate = ClampFileRate(item.FileRate);
             var existing = await db.SocialInsuranceContracts
-                .FindAsync([item.ContractId!], ct);
+                .FindAsync([contractId], ct);
             if (existing is not null)
             {
                 existing.TranslationStatus = item.TranslationStatus;
                 existing.BoqStatus = item.BoqStatus;
                 existing.FileStatus = item.FileStatus;
                 existing.FileNumber = item.FileNumber;
-                existing.FileRate = item.FileRate;
+                existing.FileRate = fileRate;
                 existing.ObjectionStatus = item.ObjectionStatus;
                 existing.ObjectionDate = item.ObjectionDate;
                 existing.OpeningDate = item.OpeningDate;
@@ -1183,12 +1248,12 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
             {
                 db.SocialInsuranceContracts.Add(new SocialInsuranceContract
                 {
-                    ContractId = item.ContractId,
+                    ContractId = contractId,
                     TranslationStatus = item.TranslationStatus,
                     BoqStatus = item.BoqStatus,
                     FileStatus = item.FileStatus,
                     FileNumber = item.FileNumber,
-                    FileRate = item.FileRate,
+                    FileRate = fileRate,
                     ObjectionStatus = item.ObjectionStatus,
                     ObjectionDate = item.ObjectionDate,
                     OpeningDate = item.OpeningDate,
@@ -1199,7 +1264,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         /*
          * =========================================================
-         * SOCIAL INSURANCE PAYMENTS — UPSERT
+         * SOCIAL INSURANCE PAYMENTS â€” UPSERT
          * =========================================================
          */
 
@@ -1207,24 +1272,38 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
         var effectiveInvoiceIds = new HashSet<string>(existingInvoiceIds, StringComparer.OrdinalIgnoreCase);
         foreach (var iid in invoiceIds) effectiveInvoiceIds.Add(iid);
 
+        string ResolveInvoiceId(string? raw)
+        {
+            var id = Tid(raw);
+            if (id.Length == 0) return "";
+            return invoiceIdAliases.TryGetValue(id, out var mapped) ? mapped : id;
+        }
+
         var validSocialPayments = socialInsurancePayments
+            .Select(x => new
+            {
+                Payment = x,
+                InvoiceId = ResolveInvoiceId(x.InvoiceId),
+                ContractId = Tid(x.ContractId)
+            })
             .Where(x =>
-                !string.IsNullOrWhiteSpace(x.InvoiceId) &&
-                !string.IsNullOrWhiteSpace(x.ContractId) &&
+                x.InvoiceId.Length > 0 &&
+                x.ContractId.Length > 0 &&
                 effectiveInvoiceIds.Contains(x.InvoiceId) &&
                 effectiveContractIds.Contains(x.ContractId))
             .ToList();
 
-        foreach (var payment in validSocialPayments)
+        foreach (var row in validSocialPayments)
         {
-            var invoiceKey = payment.InvoiceId!;
+            var payment = row.Payment;
+            var invoiceKey = row.InvoiceId;
             if (existingSIPaymentIds.Contains(invoiceKey))
             {
                 var existing = await db.SocialInsurancePayments
                     .FindAsync([invoiceKey], ct);
                 if (existing is not null)
                 {
-                    existing.ContractId = payment.ContractId;
+                    existing.ContractId = row.ContractId;
                     existing.Amount = payment.Amount;
                     existing.PaidAmount = payment.PaidAmount;
                     existing.Status = payment.Status;
@@ -1237,8 +1316,8 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
             {
                 db.SocialInsurancePayments.Add(new SocialInsurancePayment
                 {
-                    InvoiceId = payment.InvoiceId,
-                    ContractId = payment.ContractId,
+                    InvoiceId = invoiceKey,
+                    ContractId = row.ContractId,
                     Amount = payment.Amount,
                     PaidAmount = payment.PaidAmount,
                     Status = payment.Status,
@@ -1246,12 +1325,13 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     Reference = payment.Reference,
                     Notes = payment.Notes
                 });
+                existingSIPaymentIds.Add(invoiceKey);
             }
         }
 
         /*
          * =========================================================
-         * ESCALATIONS — UPSERT
+         * ESCALATIONS â€” UPSERT
          * =========================================================
          */
 
@@ -1262,7 +1342,10 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         foreach (var escalation in validEscalations)
         {
-            var dedId = escalation.InvoiceDeductionId!;
+            var dedId = Tid(escalation.InvoiceDeductionId);
+            // Orphan escalations used to fail the foreign key and roll back the whole import.
+            if (dedId.Length == 0 || !liveDeductionIds.Contains(dedId))
+                continue;
             if (existingEscalationDeductionIds.Contains(dedId))
             {
                 var existing = await db.EscalationResponses
@@ -1289,7 +1372,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         /*
          * =========================================================
-         * DEDUCTION LIBRARY — UPSERT
+         * DEDUCTION LIBRARY â€” UPSERT
          * =========================================================
          */
 
@@ -1297,25 +1380,48 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
             .Where(x => !string.IsNullOrWhiteSpace(x.Name))
             .ToList();
 
+        var libraryRows = await db.DeductionLibraryItems.ToListAsync(ct);
+        var libById = libraryRows.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+        var libByName = new Dictionary<string, DeductionLibraryItem>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in libraryRows)
+        {
+            var key = row.Name.Trim();
+            if (!libByName.ContainsKey(key))
+                libByName[key] = row;
+        }
+
         foreach (var item in validDeductionLibrary)
         {
-            var libId = string.IsNullOrWhiteSpace(item.Id) ? GenerateId() : item.Id;
-            if (existingDeductionLibIds.Contains(libId))
+            var name = Clip(item.Name, 250);
+            if (name is null)
+                continue;
+
+            DeductionLibraryItem? existing = null;
+            var libId = Tid(item.Id);
+            if (libId.Length > 0 && libById.TryGetValue(libId, out var byId))
+                existing = byId;
+            else if (libByName.TryGetValue(name, out var byName))
+                existing = byName;
+
+            if (existing is not null)
             {
-                var existing = await db.DeductionLibraryItems
-                    .FindAsync([libId], ct);
-                if (existing is not null)
+                if (!libByName.TryGetValue(name, out var nameOwner) || ReferenceEquals(nameOwner, existing))
                 {
-                    existing.Name = item.Name!.Trim();
+                    libByName.Remove(existing.Name.Trim());
+                    existing.Name = name;
+                    libByName[name] = existing;
                 }
             }
             else
             {
-                db.DeductionLibraryItems.Add(new DeductionLibraryItem
-                {
-                    Id = libId,
-                    Name = item.Name!.Trim()
-                });
+                if (libId.Length == 0 || libId.Length > 64)
+                    libId = GenerateId();
+                if (libById.ContainsKey(libId))
+                    continue;
+                var created = new DeductionLibraryItem { Id = libId, Name = name };
+                db.DeductionLibraryItems.Add(created);
+                libById[libId] = created;
+                libByName[name] = created;
             }
         }
 
@@ -1327,6 +1433,147 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        if (skippedProjects > 0)
+            warnings.Add($"ØªÙ… ØªØ®Ø·ÙŠ {skippedProjects} Ù…Ø´Ø±ÙˆØ¹ Ù„Ø£Ù† Ø§Ù„Ù…Ø§Ù„Ùƒ Ø§Ù„Ù…Ø±ØªØ¨Ø· ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
+        if (skippedContracts > 0)
+            warnings.Add($"ØªÙ… ØªØ®Ø·ÙŠ {skippedContracts} Ø¹Ù‚Ø¯ Ù„Ø£Ù† Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø§Ù„Ù…Ø±ØªØ¨Ø· ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
+        if (skippedInvoices > 0)
+            warnings.Add($"ØªÙ… ØªØ®Ø·ÙŠ {skippedInvoices} Ù…Ø³ØªØ®Ù„Øµ Ù„Ø£Ù† Ø§Ù„Ø¹Ù‚Ø¯ Ø£Ùˆ Ø±Ù‚Ù… Ø§Ù„Ù…Ø³ØªØ®Ù„Øµ ØºÙŠØ± ØµØ§Ù„Ø­.");
+        return warnings;
+    }
+
+    private static string Tid(string? id) => (id ?? "").Trim();
+
+    private static string? Clip(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var trimmed = value.Trim();
+        return trimmed.Length <= max ? trimmed : trimmed[..max];
+    }
+
+    private static decimal ClampFileRate(decimal value)
+    {
+        if (value < 0) return 0;
+        if (value > 9999999.99m) return 9999999.99m;
+        return decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static List<InvoiceItem> MapInvoiceItems(IEnumerable<InvoiceItemDto> items)
+    {
+        return items
+            .Where(item => !string.IsNullOrWhiteSpace(item.Description))
+            .Select(item => new InvoiceItem
+            {
+                Id = string.IsNullOrWhiteSpace(item.Id) ? GenerateId() : Tid(item.Id),
+                Description = item.Description!.Trim(),
+                Qty = item.Qty,
+                Rate = item.Rate,
+                Total = item.Total,
+                CurrentTotal = item.CurrentTotal
+            })
+            .ToList();
+    }
+
+    private static List<InvoiceDeduction> MapInvoiceDeductions(IEnumerable<InvoiceDeductionDto> deductions)
+    {
+        return deductions
+            .Where(d => !string.IsNullOrWhiteSpace(d.Description))
+            .Select(d => new InvoiceDeduction
+            {
+                Id = string.IsNullOrWhiteSpace(d.Id) ? GenerateId() : Tid(d.Id),
+                Description = d.Description!.Trim(),
+                CalcType = d.CalcType,
+                Val = d.Val,
+                Amount = d.Amount,
+                IsRefundable = d.IsRefundable,
+                CalcFromKeysJson = d.CalcFromKeys == null
+                    ? null
+                    : System.Text.Json.JsonSerializer.Serialize(d.CalcFromKeys)
+            })
+            .ToList();
+    }
+
+    private static void SyncInvoiceItems(AppDbContext db, Invoice existing, List<InvoiceItem> incoming)
+    {
+        var incomingIds = incoming
+            .Select(i => i.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var old in existing.Items.ToList())
+        {
+            if (!incomingIds.Contains(old.Id))
+                db.InvoiceItems.Remove(old);
+        }
+
+        foreach (var inc in incoming)
+        {
+            if (string.IsNullOrWhiteSpace(inc.Id))
+                inc.Id = GenerateId();
+            var old = existing.Items.FirstOrDefault(i =>
+                string.Equals(i.Id, inc.Id, StringComparison.OrdinalIgnoreCase));
+            if (old is null)
+            {
+                existing.Items.Add(inc);
+                continue;
+            }
+
+            old.Description = inc.Description;
+            old.Qty = inc.Qty;
+            old.Rate = inc.Rate;
+            old.Total = inc.Total;
+            old.CurrentTotal = inc.CurrentTotal;
+        }
+    }
+
+    private async Task SyncInvoiceDeductionsAsync(
+        Invoice existing,
+        List<InvoiceDeduction> incoming,
+        HashSet<string> liveDeductionIds,
+        CancellationToken ct)
+    {
+        var incomingIds = incoming
+            .Select(d => d.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var toRemove = existing.Deductions.Where(d => !incomingIds.Contains(d.Id)).ToList();
+        if (toRemove.Count > 0)
+        {
+            var removeIds = toRemove.Select(d => d.Id).ToList();
+            var escalations = await db.EscalationResponses
+                .Where(e => removeIds.Contains(e.InvoiceDeductionId))
+                .ToListAsync(ct);
+            if (escalations.Count > 0)
+                db.EscalationResponses.RemoveRange(escalations);
+            db.InvoiceDeductions.RemoveRange(toRemove);
+            foreach (var id in removeIds)
+                liveDeductionIds.Remove(id);
+        }
+
+        foreach (var inc in incoming)
+        {
+            if (string.IsNullOrWhiteSpace(inc.Id))
+                inc.Id = GenerateId();
+            var old = existing.Deductions.FirstOrDefault(d =>
+                string.Equals(d.Id, inc.Id, StringComparison.OrdinalIgnoreCase));
+            if (old is null)
+            {
+                existing.Deductions.Add(inc);
+                liveDeductionIds.Add(inc.Id);
+                continue;
+            }
+
+            old.Description = inc.Description;
+            old.CalcType = inc.CalcType;
+            old.Val = inc.Val;
+            old.Amount = inc.Amount;
+            old.IsRefundable = inc.IsRefundable;
+            old.CalcFromKeysJson = inc.CalcFromKeysJson;
+            liveDeductionIds.Add(old.Id);
+        }
     }
 
     private static string NormalizeId(

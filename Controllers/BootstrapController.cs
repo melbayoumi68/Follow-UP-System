@@ -28,6 +28,11 @@ public class BootstrapController(InvoicesErp.Interfaces.IBootstrapService servic
         options.Converters.Add(new FlexibleDateTimeConverter());
         options.Converters.Add(new FlexibleNullableDateTimeConverter());
         options.Converters.Add(new FlexibleStringArrayConverter());
+        options.Converters.Add(new FlexibleStringConverter());
+        options.Converters.Add(new FlexibleBoolConverter());
+        options.Converters.Add(new FlexibleIntConverter());
+        options.Converters.Add(new FlexibleNullableIntConverter());
+        options.Converters.Add(new FlexibleDecimalConverter());
         return options;
     }
 
@@ -120,9 +125,10 @@ public class BootstrapController(InvoicesErp.Interfaces.IBootstrapService servic
 
         try
         {
+            IReadOnlyList<string> warnings = [];
             if (string.Equals(mode, "upsert", StringComparison.OrdinalIgnoreCase))
             {
-                await service.UpsertAsync(dto, ct);
+                warnings = await service.UpsertAsync(dto, ct);
             }
             else
             {
@@ -133,7 +139,8 @@ public class BootstrapController(InvoicesErp.Interfaces.IBootstrapService servic
                 success = true,
                 message = string.Equals(mode, "upsert", StringComparison.OrdinalIgnoreCase)
                     ? "تم حفظ البيانات بنجاح (upsert)."
-                    : "تم حفظ البيانات بنجاح."
+                    : "تم حفظ البيانات بنجاح.",
+                warnings
             });
         }
         catch (ArgumentException ex)
@@ -220,10 +227,17 @@ file sealed class FlexibleDateTimeConverter : JsonConverter<DateTime>
             throw new JsonException($"Invalid date format: '{s}'");
         }
 
-        if (reader.TokenType == JsonTokenType.Number &&
-            reader.TryGetInt64(out var epoch))
+        if (reader.TokenType == JsonTokenType.Number)
         {
-            // دعم epoch milliseconds لو الـ frontend بيبعت رقم
+            var serial = reader.TryGetInt64(out var asLong)
+                ? asLong
+                : reader.GetDouble();
+
+            // Excel serial dates arrive as numbers around 30,000–60,000.
+            if (serial > 20_000 && serial < 80_000)
+                return DateTime.SpecifyKind(DateTime.FromOADate(serial), DateTimeKind.Utc);
+
+            var epoch = (long)serial;
             if (epoch > 10_000_000_000)
                 return DateTimeOffset.FromUnixTimeMilliseconds(epoch).UtcDateTime;
 
@@ -339,4 +353,141 @@ file sealed class FlexibleStringArrayConverter : JsonConverter<string[]?>
             writer.WriteStringValue(item);
         writer.WriteEndArray();
     }
+}
+
+/// <summary>Excel often emits ids, phones and invoice numbers as JSON numbers.</summary>
+file sealed class FlexibleStringConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return null;
+            case JsonTokenType.String:
+                return reader.GetString();
+            case JsonTokenType.True:
+                return "true";
+            case JsonTokenType.False:
+                return "false";
+            case JsonTokenType.Number:
+                if (reader.TryGetInt64(out var asLong))
+                    return asLong.ToString(CultureInfo.InvariantCulture);
+                return reader.GetDouble().ToString(CultureInfo.InvariantCulture);
+            default:
+                throw new JsonException($"Unexpected token for string: {reader.TokenType}");
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null) writer.WriteNullValue();
+        else writer.WriteStringValue(value);
+    }
+}
+
+file sealed class FlexibleBoolConverter : JsonConverter<bool>
+{
+    public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.True:
+                return true;
+            case JsonTokenType.False:
+            case JsonTokenType.Null:
+                return false;
+            case JsonTokenType.Number:
+                return reader.TryGetInt64(out var n) && n != 0;
+            case JsonTokenType.String:
+                var s = reader.GetString()?.Trim();
+                return s is "1" or "true" or "True" or "TRUE" or "yes" or "Yes" or "YES" or "y" or "Y" or "نعم";
+            default:
+                return false;
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options)
+        => writer.WriteBooleanValue(value);
+}
+
+file sealed class FlexibleIntConverter : JsonConverter<int>
+{
+    public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return 0;
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var n))
+            return n;
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var s = reader.GetString();
+            if (string.IsNullOrWhiteSpace(s))
+                return 0;
+            if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i))
+                return i;
+            if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                return (int)decimal.Truncate(d);
+        }
+        throw new JsonException($"Unexpected token for int: {reader.TokenType}");
+    }
+
+    public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options)
+        => writer.WriteNumberValue(value);
+}
+
+file sealed class FlexibleNullableIntConverter : JsonConverter<int?>
+{
+    public override int? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return null;
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var s = reader.GetString();
+            if (string.IsNullOrWhiteSpace(s))
+                return null;
+            if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i))
+                return i;
+            throw new JsonException($"Invalid int: '{s}'");
+        }
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var n))
+            return n;
+        throw new JsonException($"Unexpected token for int?: {reader.TokenType}");
+    }
+
+    public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options)
+    {
+        if (value is null) writer.WriteNullValue();
+        else writer.WriteNumberValue(value.Value);
+    }
+}
+
+file sealed class FlexibleDecimalConverter : JsonConverter<decimal>
+{
+    public override decimal Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+            return 0;
+        if (reader.TokenType == JsonTokenType.Number)
+        {
+            if (reader.TryGetDecimal(out var dec))
+                return dec;
+            return (decimal)reader.GetDouble();
+        }
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var s = reader.GetString();
+            if (string.IsNullOrWhiteSpace(s))
+                return 0;
+            s = s.Replace(",", "").Replace(" ", "").Trim();
+            if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                return d;
+            throw new JsonException($"Invalid decimal: '{s}'");
+        }
+        throw new JsonException($"Unexpected token for decimal: {reader.TokenType}");
+    }
+
+    public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options)
+        => writer.WriteNumberValue(value);
 }

@@ -39,7 +39,7 @@ public class ContractsController(AppDbContext db) : ControllerBase
             "signdate" => desc ? q.OrderByDescending(x => x.SignDate) : q.OrderBy(x => x.SignDate),
             _ => desc ? q.OrderByDescending(x => x.Name) : q.OrderBy(x => x.Name)
         };
-        var projected = q.Select(x => new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate));
+        var projected = q.Select(x => new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue));
         if (page is null)
             return Ok(await projected.ToListAsync(ct));
         return Ok(await projected.ToPagedAsync(page.Value, pageSize ?? 25, ct));
@@ -50,7 +50,7 @@ public class ContractsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<ContractDto>> GetById(string id, CancellationToken ct)
     {
         var x = await db.Contracts.FindAsync([id], ct);
-        return x is null ? NotFound() : Ok(new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate));
+        return x is null ? NotFound() : Ok(new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue));
     }
 
     [HttpPost]
@@ -83,6 +83,7 @@ public class ContractsController(AppDbContext db) : ControllerBase
             VoAmount = 0,
             ClaimsAmount = 0,
             VatAmount = 0,
+            PaymentValue = dto.PaymentValue,
             PaymentTerms = dto.PaymentTerms,
             SignDate = dto.SignDate,
             ContractDuration = dto.ContractDuration,
@@ -90,9 +91,28 @@ public class ContractsController(AppDbContext db) : ControllerBase
             Status = dto.Status
         };
         db.Add(x);
+
+        // تسجيل القيمة الأولية للدفعه لو موجودة
+        if (dto.PaymentValue.HasValue)
+        {
+            var user = HttpContext.Items["AppUser"] as AppUser;
+            db.ContractPaymentValueLogs.Add(new ContractPaymentValueLog
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                ContractId = x.Id,
+                ProjectId = x.ProjectId,
+                OldValue = null,
+                NewValue = dto.PaymentValue,
+                ChangedByUserId = user?.Id,
+                ChangedByUsername = user?.Username ?? user?.DisplayName,
+                ChangedAt = DateTime.UtcNow,
+                Note = "إنشاء"
+            });
+        }
+
         await db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(GetById), new { id = x.Id },
-            new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate));
+            new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue));
     }
 
     [HttpPut("{id}")]
@@ -128,8 +148,51 @@ public class ContractsController(AppDbContext db) : ControllerBase
         x.ContractDuration = dto.ContractDuration;
         x.EndDate = endDate;
 
+        // تسجيل تغيير قيمة الدفعة لو اختلفت
+        if (x.PaymentValue != dto.PaymentValue)
+        {
+            var user = HttpContext.Items["AppUser"] as AppUser;
+            db.ContractPaymentValueLogs.Add(new ContractPaymentValueLog
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                ContractId = x.Id,
+                ProjectId = x.ProjectId,
+                OldValue = x.PaymentValue,
+                NewValue = dto.PaymentValue,
+                ChangedByUserId = user?.Id,
+                ChangedByUsername = user?.Username ?? user?.DisplayName,
+                ChangedAt = DateTime.UtcNow,
+                Note = "تعديل"
+            });
+            x.PaymentValue = dto.PaymentValue;
+        }
+
         await db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    [HttpGet("{id}/payment-value-logs")]
+    [RequirePermission(PermissionModules.Contracts, PermissionActions.View)]
+    public async Task<IActionResult> GetPaymentValueLogs(string id, CancellationToken ct)
+    {
+        var logs = await db.ContractPaymentValueLogs
+            .AsNoTracking()
+            .Where(l => l.ContractId == id)
+            .OrderByDescending(l => l.ChangedAt)
+            .Select(l => new
+            {
+                l.Id,
+                l.ContractId,
+                l.ProjectId,
+                l.OldValue,
+                l.NewValue,
+                l.ChangedByUserId,
+                l.ChangedByUsername,
+                l.ChangedAt,
+                l.Note
+            })
+            .ToListAsync(ct);
+        return Ok(logs);
     }
 
     [HttpDelete("{id}")]
@@ -163,6 +226,8 @@ public class ContractsController(AppDbContext db) : ControllerBase
             await db.CostControlItems.Where(i => ccIds.Contains(i.CostControlId)).ExecuteDeleteAsync(ct);
             await db.CostControls.Where(c => ccIds.Contains(c.Id)).ExecuteDeleteAsync(ct);
         }
+
+        await db.ContractPaymentValueLogs.Where(l => l.ContractId == id).ExecuteDeleteAsync(ct);
 
         db.Contracts.Remove(x);
         await db.SaveChangesAsync(ct);

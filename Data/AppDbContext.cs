@@ -8,6 +8,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Owner> Owners => Set<Owner>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<Contract> Contracts => Set<Contract>();
+    public DbSet<ContractPaymentValueLog> ContractPaymentValueLogs => Set<ContractPaymentValueLog>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceItem> InvoiceItems => Set<InvoiceItem>();
     public DbSet<InvoiceDeduction> InvoiceDeductions => Set<InvoiceDeduction>();
@@ -81,10 +82,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.VoAmount).HasPrecision(18, 2);
             e.Property(x => x.ClaimsAmount).HasPrecision(18, 2);
             e.Property(x => x.VatAmount).HasPrecision(18, 2);
+            e.Property(x => x.PaymentValue).HasPrecision(18, 2);
             // ContractDuration is duration in days; EndDate is calculated by the API as SignDate + DurationDays
             e.Property(x => x.ContractDuration).IsRequired();
             e.HasOne(x => x.Project).WithMany(x => x.Contracts).HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.ProjectId);
+        });
+
+        b.Entity<ContractPaymentValueLog>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.ContractId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.ProjectId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.OldValue).HasPrecision(18, 2);
+            e.Property(x => x.NewValue).HasPrecision(18, 2);
+            e.Property(x => x.ChangedByUserId).HasMaxLength(64);
+            e.Property(x => x.ChangedByUsername).HasMaxLength(200);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ContractId);
+            e.HasIndex(x => x.ProjectId);
+            e.HasIndex(x => x.ChangedAt);
         });
 
         b.Entity<Invoice>(e =>
@@ -271,7 +290,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey<SectorManager>(x => x.SectorId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // يمنع وجود أكثر من مدير لنفس القطاع
+            // ÙŠÙ…Ù†Ø¹ ÙˆØ¬ÙˆØ¯ Ø£ÙƒØ«Ø± Ù…Ù† Ù…Ø¯ÙŠØ± Ù„Ù†ÙØ³ Ø§Ù„Ù‚Ø·Ø§Ø¹
             e.HasIndex(x => x.SectorId)
                 .IsUnique();
         });

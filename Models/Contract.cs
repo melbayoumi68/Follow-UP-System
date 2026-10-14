@@ -11,6 +11,8 @@ public class Contract
     public decimal VoAmount { get; set; }
     public decimal ClaimsAmount { get; set; }
     public decimal VatAmount { get; set; }
+    /// <summary>قيمة الدفعة (اختياري). يمكن تركها فارغة أو تعديلها لاحقاً مع تسجيل كل تغيير في الـ Log.</summary>
+    public decimal? PaymentValue { get; set; }
     public int PaymentTerms { get; set; }
     /// <summary>Contract start date (sign date). Required for duration calculation.</summary>
     public DateOnly? SignDate { get; set; }
