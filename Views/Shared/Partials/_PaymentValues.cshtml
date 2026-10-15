@@ -1,13 +1,5 @@
 <div id="paymentValuesView" class="page-view">
     <div class="table-container">
-        <section class="payment-values-hero">
-            <!-- <div>
-                <span class="payment-values-eyebrow">متابعة مالية</span>
-                <h2>قيمة الدفعات المضافة</h2>
-                <p>تابعي قيمة الدفعة المقدمة وما تم خصمه من المستخلصات والمتبقي لكل عقد.</p>
-            </div> -->
-            <div class="payment-values-hero-mark" aria-hidden="true">↗</div>
-        </section>
         <section class="payment-values-kpis" aria-label="ملخص الدفعات المقدمة">
             <article class="payment-kpi-card payment-kpi-total">
                 <span class="payment-kpi-icon">＋</span><span class="payment-kpi-label">إجمالي قيمة الدفعات</span>
@@ -73,18 +65,23 @@
             </div>
             <div id="pagination-tblPaymentValueHistory"></div>
         </section>
-        <section class="payment-values-charts" aria-label="تحليل الدفعات المقدمة">
-            <article class="payment-chart-card payment-chart-donut">
-                <div class="payment-chart-heading"><div><span class="payment-values-eyebrow">نظرة عامة</span><h3>موقف الدفعات</h3><p>المخصوم والمتبقي من إجمالي الدفعات</p></div><span>تحليل إجمالي</span></div>
-                <div class="payment-chart-canvas-wrap"><canvas id="paymentValuesStatusChart" aria-label="مخطط موقف الدفعات" role="img"></canvas></div>
-            </article>
-            <article class="payment-chart-card payment-chart-bars">
-                <div class="payment-chart-heading"><div><span class="payment-values-eyebrow">مقارنة تفصيلية</span><h3>الدفعات حسب العقد</h3><p>القيمة المستردة والمتبقية لأعلى العقود</p></div><span>أعلى 8 عقود</span></div>
-                <div class="payment-chart-canvas-wrap"><canvas id="paymentValuesContractsChart" aria-label="مخطط الدفعات حسب العقد" role="img"></canvas></div>
-            </article>
+        <section class="mc-section payment-values-chart-section" aria-label="تحليل الدفعات المقدمة">
+            <div class="mc-section-head">
+                <div><h3>التحليل المرئي للدفعات المقدمة</h3><p>مقارنة المبالغ التي تم خصمها بالمبالغ المتبقية.</p></div>
+            </div>
+            <div class="mc-charts-grid payment-values-charts">
+                <article class="chart-container payment-chart-card payment-chart-donut">
+                    <h4 class="chart-title">إجمالي المخصوم والمتبقي</h4>
+                    <p class="payment-chart-description">ثلاثة أعمدة تقارن إجمالي الدفعات بما خُصم وما تبقى — القيم بالجنيه.</p>
+                    <div class="chart-body payment-chart-scroll"><div class="payment-chart-canvas-inner"><canvas id="paymentValuesStatusChart" aria-label="مقارنة إجمالي الدفعات بالمخصوم والمتبقي بالأعمدة" role="img"></canvas></div></div>
+                </article>
+                <article class="chart-container payment-chart-card payment-chart-bars">
+                    <h4 class="chart-title">المخصوم والمتبقي لكل عقد</h4>
+                    <p class="payment-chart-description">أعمدة متجاورة للمخصوم والمتبقي في أعلى 8 عقود حسب قيمة الدفعة — القيم بالجنيه.</p>
+                    <div class="chart-body payment-chart-scroll"><div class="payment-chart-canvas-inner payment-chart-contracts-inner"><canvas id="paymentValuesContractsChart" aria-label="أعمدة متجاورة تقارن المخصوم والمتبقي حسب العقد" role="img"></canvas></div></div>
+                </article>
+            </div>
         </section>
       
     </div>
 </div>
-
-

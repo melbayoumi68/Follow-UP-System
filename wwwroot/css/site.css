@@ -3310,12 +3310,7 @@ input[data-fp-init]::-webkit-calendar-picker-indicator {
 .payment-contract-code { display: block; margin-top: 0.2rem; color: #64748b; font-size: 0.78rem; }
 .payment-values-overdrawn { color: #b42318; font-weight: 700; }
 .form-hint { display: block; margin-top: 0.25rem; color: #64748b; font-size: 0.78rem; }
-.payment-values-hero { position: relative; display: flex; align-items: center; justify-content: space-between; overflow: hidden; padding: 1.6rem 1.8rem; margin-bottom: 1.1rem; border-radius: 18px; color: #fff; background: radial-gradient(circle at 12% 10%, rgba(255,255,255,.2), transparent 32%), linear-gradient(120deg, #1d4ed8, var(--primary) 58%, #1e40af); box-shadow: 0 14px 34px rgba(37, 99, 235, .18); animation: paymentRiseIn .55s ease both; }
-.payment-values-hero h2 { margin: .25rem 0 .35rem; color: #fff; font-size: clamp(1.3rem, 2vw, 1.8rem); font-weight: 800; }
-.payment-values-hero p { margin: 0; color: rgba(255,255,255,.78); font-size: .94rem; }
 .payment-values-eyebrow { color: var(--primary); font-size: .82rem; font-weight: 750; letter-spacing: .025em; }
-.payment-values-hero .payment-values-eyebrow { color: #dbeafe; }
-.payment-values-hero-mark { display: grid; place-items: center; width: 68px; height: 68px; border: 1px solid rgba(255,255,255,.28); border-radius: 22px; background: rgba(255,255,255,.12); font-size: 2rem; transform: rotate(-8deg); }
 .payment-values-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .9rem; margin-bottom: 1rem; }
 .payment-kpi-card { position: relative; display: grid; grid-template-columns: 42px 1fr; align-content: center; align-items: center; min-height: 132px; padding: 1.05rem 1.15rem; overflow: hidden; border: 1px solid #e6edf5; border-radius: 16px; background: linear-gradient(150deg, #fff, #f8fbff); box-shadow: 0 5px 18px rgba(15, 23, 42, .045); animation: paymentRiseIn .55s ease both; }
 .payment-kpi-card:nth-child(2) { animation-delay: .07s; }.payment-kpi-card:nth-child(3) { animation-delay: .14s; }.payment-kpi-card:nth-child(4) { animation-delay: .21s; }
@@ -3326,12 +3321,19 @@ input[data-fp-init]::-webkit-calendar-picker-indicator {
 .payment-kpi-deducted .payment-kpi-icon { background: #ecfdf5; color: var(--success); }.payment-kpi-remaining .payment-kpi-icon { background: #fffbeb; color: #b7791f; }.payment-kpi-count .payment-kpi-icon { background: #ecfeff; color: var(--info); }
 .payment-values-charts { display: grid; grid-template-columns: minmax(260px, .78fr) minmax(0, 1.45fr); gap: 1rem; margin-bottom: 1.25rem; }
 .payment-chart-card { min-width: 0; padding: 1.1rem 1.2rem .8rem; border: 1px solid #e6edf5; border-radius: 16px; background: #fff; box-shadow: 0 5px 18px rgba(15, 23, 42, .04); animation: paymentRiseIn .65s ease both; }
-.payment-chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem; }
-.payment-chart-heading h3,.payment-section-heading h3 { margin: .12rem 0 0; color: var(--dark); font-size: 1.18rem; font-weight: 800; }
-.payment-chart-heading p,.payment-section-heading p { margin: .3rem 0 0; color: var(--gray); font-size: .92rem; }
-.payment-chart-heading > span { padding: .34rem .68rem; border: 1px solid #dbeafe; border-radius: 999px; background: #eff6ff; color: var(--primary); font-size: .78rem; font-weight: 700; white-space: nowrap; }
-.payment-chart-canvas-wrap { position: relative; height: 290px; margin-top: .7rem; }
-.payment-chart-donut .payment-chart-canvas-wrap { max-width: 420px; height: 280px; margin-inline: auto; }
+.payment-values-chart-section { padding: 1.2rem 1.25rem; }
+.payment-values-chart-section .mc-section-head { margin-bottom: 1rem; }
+.payment-values-chart-section .mc-section-head h3 { font-size: 1.02rem; font-weight: 800; }
+.payment-values-chart-section .mc-section-head p { margin: .25rem 0 0; color: #64748b; font-size: .78rem; }
+.payment-values-chart-section .mc-charts-grid { grid-template-columns: minmax(260px, .78fr) minmax(0, 1.45fr); gap: 1rem; }
+.payment-chart-card { border-color: #e6eaf2; border-radius: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.04); padding: 1.15rem 1.25rem 1.3rem; }
+.payment-chart-card .chart-title { min-height: 20px; margin: 0 0 .35rem; color: #0f172a; font-size: .95rem; font-weight: 700; }
+.payment-chart-card .chart-title::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-inline-end: .45rem; border-radius: 50%; background: #2563eb; vertical-align: middle; }
+.payment-chart-description { min-height: 1.3rem; margin: 0 0 .65rem; color: #64748b; font-size: .78rem; }
+.payment-chart-scroll { position: relative; height: 300px; width: 100%; overflow-x: auto !important; overflow-y: hidden !important; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.payment-chart-canvas-inner { position: relative; width: 100%; min-width: 100%; height: 100%; }
+.payment-chart-canvas-inner canvas { display: block; width: 100% !important; height: 100% !important; }
+.payment-chart-contracts-inner { min-width: 760px; }
 .payment-transactions-section { margin-top: 1.7rem; padding-top: 1.2rem; border-top: 1px solid #e9eef5; }
 .payment-section-heading { margin-bottom: .85rem; }
 .payment-section-heading .payment-values-eyebrow { display: block; margin-bottom: .25rem; color: var(--primary); }
@@ -3357,9 +3359,9 @@ input[data-fp-init]::-webkit-calendar-picker-indicator {
 .payment-api-card-muted { background: #f8fafc; border-style: dashed; }
 #pagination-tblAdvancePaymentTransactions,#pagination-tblPaymentValueHistory { margin-top: .8rem; }
 @keyframes paymentRiseIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-@media (max-width: 1050px) { .payment-values-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }.payment-values-charts { grid-template-columns: 1fr; } }
-@media (max-width: 620px) { .payment-values-hero { padding: 1.2rem; }.payment-values-hero-mark { width: 48px; height: 48px; border-radius: 15px; font-size: 1.4rem; }.payment-values-hero p { max-width: 34ch; font-size: .9rem; }.payment-kpi-card { grid-template-columns: 32px 1fr; min-height: 120px; padding: .85rem; }.payment-kpi-icon { width: 29px; height: 29px; border-radius: 9px; font-size: 1rem; }.payment-kpi-card strong { font-size: 1.05rem; }.payment-chart-canvas-wrap { height: 250px; } }
-@media (prefers-reduced-motion: reduce) { .payment-values-hero,.payment-kpi-card,.payment-chart-card { animation: none; } }
+@media (max-width: 1050px) { .payment-values-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }.payment-values-chart-section .mc-charts-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 620px) { .payment-kpi-card { grid-template-columns: 32px 1fr; min-height: 120px; padding: .85rem; }.payment-kpi-icon { width: 29px; height: 29px; border-radius: 9px; font-size: 1rem; }.payment-kpi-card strong { font-size: 1.05rem; }.payment-chart-scroll { height: 270px; } }
+@media (prefers-reduced-motion: reduce) { .payment-kpi-card,.payment-chart-card { animation: none; } }
 
 /* Contracts table: keep financial columns readable and aligned. */
 #contractsView .data-table-wrapper { overflow: auto; }
@@ -5454,3 +5456,293 @@ html[dir="rtl"] #sidebar {
     padding: 0 !important;
 }
 
+/* Escalations table: reference-style header, subtle striping and light borders. */
+#escalationsView .table-container {
+    padding: 1rem !important;
+    border: 1px solid #e6eaf0 !important;
+    border-radius: 14px !important;
+    background: #fff !important;
+    box-shadow: 0 3px 12px rgba(15, 23, 42, 0.035) !important;
+}
+
+#escalationsView .data-table-wrapper {
+    border: 1px solid #e8edf3 !important;
+    border-radius: 11px !important;
+    background: #fff !important;
+    scrollbar-color: #cbd5e1 #f8fafc;
+}
+
+#tblEscalations {
+    width: 1885px !important;
+    min-width: 1885px !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    color: #334155;
+    font-size: 0.88rem !important;
+}
+
+#tblEscalations th,
+#tblEscalations td {
+    padding: 0.62rem 0.72rem !important;
+    border: 0 !important;
+    border-bottom: 1px solid #edf1f5 !important;
+    color: #334155;
+    font-size: 0.88rem !important;
+    line-height: 1.45;
+}
+
+#tblEscalations thead th {
+    height: 44px;
+    min-height: 44px;
+    padding: 0.65rem 0.7rem !important;
+    background: #f5f7fa !important;
+    color: #64748b !important;
+    border-bottom: 1px solid #e4e9ef !important;
+    font-size: 0.82rem !important;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+#tblEscalations tbody tr { transition: background-color 0.15s ease; }
+#tblEscalations tbody tr:nth-child(odd) td { background: #fff !important; }
+#tblEscalations tbody tr:nth-child(even) td { background: #f7f9fb !important; }
+#tblEscalations tbody tr:hover td { background: #eef4fa !important; }
+#tblEscalations tbody tr:last-child td { border-bottom: 0 !important; }
+
+#tblEscalations .col-inv-no {
+    width: 130px;
+    min-width: 130px;
+    background: #fff !important;
+    color: #263548;
+    font-weight: 750;
+    box-shadow: -3px 0 8px -7px rgba(15, 23, 42, 0.45);
+}
+#tblEscalations thead .col-inv-no { background: #f0f3f7 !important; }
+#tblEscalations tbody tr:nth-child(even) .col-inv-no { background: #f7f9fb !important; }
+#tblEscalations tbody tr:hover .col-inv-no { background: #eef4fa !important; }
+#tblEscalations .col-inv-date { width: 140px; min-width: 140px; }
+#tblEscalations .col-owner { width: 155px; min-width: 155px; }
+#tblEscalations .col-project { width: 160px; min-width: 160px; }
+#tblEscalations .col-contract { width: 190px; min-width: 190px; }
+#tblEscalations .col-desc { width: 235px; min-width: 235px; }
+#tblEscalations .col-amount { width: 130px; min-width: 130px; }
+#tblEscalations .col-follow-up { width: 135px; min-width: 135px; }
+#tblEscalations .col-status { width: 190px; min-width: 190px; }
+#tblEscalations .col-resp-date { width: 145px; min-width: 145px; }
+#tblEscalations .col-ret-amt { width: 165px; min-width: 165px; }
+#tblEscalations .col-days { width: 100px; min-width: 100px; }
+
+#tblEscalations .esc-status-ctrl,
+#tblEscalations .esc-date-ctrl,
+#tblEscalations .esc-ret-ctrl {
+    min-height: 34px;
+    height: 34px;
+    padding: 0.35rem 0.55rem !important;
+    border: 1px solid #dce3eb !important;
+    border-radius: 7px !important;
+    background: #fff !important;
+    color: #334155 !important;
+    font-size: 0.82rem !important;
+    box-shadow: none !important;
+}
+#tblEscalations .esc-status-ctrl:focus,
+#tblEscalations .esc-date-ctrl:focus,
+#tblEscalations .esc-ret-ctrl:focus {
+    border-color: #94a3b8 !important;
+    outline: 2px solid rgba(148, 163, 184, 0.16);
+}
+#tblEscalations .esc-date-ctrl {
+    width: 122px !important;
+    max-width: 122px !important;
+    padding: 0.3rem 0.45rem !important;
+    direction: ltr;
+    text-align: left;
+    background: #eef0f2 !important;
+    color: #475569 !important;
+    font-variant-numeric: tabular-nums;
+}
+#tblEscalations .esc-ret-ctrl {
+    width: 112px !important;
+    max-width: 112px !important;
+    text-align: left;
+    font-variant-numeric: tabular-nums;
+}
+#tblEscalations .esc-subtext { color: #64748b; font-size: 0.75rem; }
+
+#tblEscalations .esc-total-row td,
+#tblEscalations tfoot td.esc-foot-inline {
+    padding: 0.55rem 0.8rem !important;
+    background: #f2f5f8 !important;
+    border-top: 1px solid #dfe5ec !important;
+    border-bottom: 0 !important;
+    color: #1e293b;
+    position: static !important;
+    box-shadow: none !important;
+}
+#tblEscalations .esc-total-summary {
+    min-height: 42px;
+    justify-content: space-between;
+    gap: 0.6rem 1.25rem;
+    padding: 0.25rem 0.45rem;
+    font-size: 0.86rem;
+}
+#tblEscalations .esc-total-summary span {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: #334155;
+    font-weight: 700;
+}
+#tblEscalations .esc-total-summary strong { color: #0f172a; font-size: 0.92rem; }
+
+/* Flat, single-line totals row as shown in the reference. */
+#tblEscalations .esc-foot-group {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 0.5rem 1rem;
+}
+#tblEscalations .esc-foot-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    color: #111827;
+    font-size: 0.87rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+#tblEscalations .esc-foot-item strong {
+    color: #111827 !important;
+    font-size: 0.94rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+#tblEscalations .esc-foot-count strong { color: #111827 !important; }
+#tblEscalations .esc-foot-total strong { color: #111827 !important; }
+#tblEscalations .esc-foot-returned strong { color: #111827 !important; }
+#tblEscalations .esc-foot-remaining strong,
+#tblEscalations .esc-foot-remaining #escFootReturnRate { color: #111827 !important; }
+#tblEscalations .esc-foot-sep { color: #cbd5e1; font-size: 0.9rem; }
+
+@media (max-width: 700px) {
+    #escalationsView .table-container { padding: 0.65rem !important; }
+    #tblEscalations { width: 1885px !important; min-width: 1885px !important; }
+    #tblEscalations th,
+    #tblEscalations td { padding: 0.55rem 0.6rem !important; }
+    #tblEscalations .esc-total-summary { justify-content: flex-start; }
+    #tblEscalations .esc-foot-group { flex-wrap: wrap; justify-content: flex-start; }
+}
+
+/* Keep response controls centered in their own columns. */
+#tblEscalations th.col-resp-date,
+#tblEscalations td.col-resp-date,
+#tblEscalations th.col-ret-amt,
+#tblEscalations td.col-ret-amt { text-align: center !important; }
+
+#tblEscalations input.esc-date-ctrl {
+    display: block;
+    width: 126px !important;
+    max-width: 126px !important;
+    height: 34px !important;
+    margin: 0 auto;
+    padding: 0.3rem 0.42rem !important;
+    direction: ltr;
+    text-align: center;
+    color-scheme: light;
+    -webkit-appearance: auto;
+    appearance: auto;
+    cursor: pointer;
+    background: #eef1f4 !important;
+    border: 1px solid #d9e0e8 !important;
+    border-radius: 7px !important;
+    box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.025) !important;
+}
+
+#tblEscalations input.esc-date-ctrl::-webkit-calendar-picker-indicator {
+    display: block;
+    width: 16px;
+    height: 16px;
+    margin-inline-start: 0.25rem;
+    opacity: 0.72;
+    cursor: pointer;
+}
+
+#tblEscalations input.esc-ret-ctrl {
+    display: block;
+    width: 118px !important;
+    max-width: 118px !important;
+    height: 34px !important;
+    margin: 0 auto;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* This footer sits outside the horizontal scroller, so it stays centered and visible. */
+#escalationsView .esc-total-footer {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    min-height: 58px;
+    margin: 0;
+    padding: 0.65rem 1rem;
+    border: 1px solid #e1e6ed;
+    border-top: 0;
+    border-radius: 0 0 11px 11px;
+    background: #f7f9fb;
+    box-shadow: 0 2px 5px rgba(15, 23, 42, 0.025);
+}
+
+#escalationsView .esc-total-footer .esc-foot-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-evenly;
+    flex-wrap: nowrap;
+    gap: 0.65rem 1.15rem;
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+}
+
+#escalationsView .esc-total-footer .esc-foot-item {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.32rem;
+    color: #111827;
+    font-size: 0.88rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+#escalationsView .esc-total-footer .esc-foot-item strong,
+#escalationsView .esc-total-footer #escFootReturnRate {
+    color: #111827;
+    font-size: 0.96rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+#escalationsView .esc-total-footer .esc-foot-sep {
+    display: block;
+    flex: 0 0 1px;
+    width: 1px;
+    height: 25px;
+    padding: 0;
+    background: #dce2e9;
+}
+
+@media (max-width: 900px) {
+    #escalationsView .esc-total-footer .esc-foot-group { flex-wrap: wrap; gap: 0.55rem 1rem; }
+    #escalationsView .esc-total-footer .esc-foot-sep { display: none; }
+}
