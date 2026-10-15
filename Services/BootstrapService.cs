@@ -339,6 +339,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     VoAmount = contract.VoAmount < 0 ? 0 : contract.VoAmount,
                     ClaimsAmount = contract.ClaimsAmount < 0 ? 0 : contract.ClaimsAmount,
                     VatAmount = contract.VatAmount < 0 ? 0 : contract.VatAmount,
+                    PaymentValue = contract.PaymentValue,
                     PaymentTerms = contract.PaymentTerms,
                     SignDate = contract.SignDate,
                     ContractDuration = duration,
@@ -981,6 +982,8 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     existing.VoAmount = contract.VoAmount < 0 ? 0 : contract.VoAmount;
                     existing.ClaimsAmount = contract.ClaimsAmount < 0 ? 0 : contract.ClaimsAmount;
                     existing.VatAmount = contract.VatAmount < 0 ? 0 : contract.VatAmount;
+                    if (contract.PaymentValue.HasValue)
+                        existing.PaymentValue = contract.PaymentValue;
                     existing.PaymentTerms = contract.PaymentTerms;
                     existing.SignDate = contract.SignDate;
                     existing.ContractDuration = duration;
@@ -1003,6 +1006,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     VoAmount = contract.VoAmount < 0 ? 0 : contract.VoAmount,
                     ClaimsAmount = contract.ClaimsAmount < 0 ? 0 : contract.ClaimsAmount,
                     VatAmount = contract.VatAmount < 0 ? 0 : contract.VatAmount,
+                    PaymentValue = contract.PaymentValue,
                     PaymentTerms = contract.PaymentTerms,
                     SignDate = contract.SignDate,
                     ContractDuration = duration,

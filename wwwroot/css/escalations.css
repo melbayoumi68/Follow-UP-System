@@ -1,0 +1,444 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap");
+
+/* =========================================================
+   صفحة التعليات — كل الـ styles متقيّدة بـ #escalationsView
+   ========================================================= */
+
+#escalationsView {
+  --es-ink: #10233b;
+  --es-ink-soft: #3d5068;
+  --es-muted: #66788f;
+  --es-bg: #f2f5f9;
+  --es-surface: #ffffff;
+  --es-line: #dde4ed;
+  --es-line-soft: #eaeff5;
+
+  --es-total: #1d4ed8;
+  --es-returned: #0f766e;
+  --es-remaining: #b45309;
+  --es-count: #475569;
+
+  --es-radius: 16px;
+  --es-shadow: 0 1px 2px rgba(16, 35, 59, .05), 0 8px 24px rgba(16, 35, 59, .06);
+
+  direction: rtl;
+  font-family: "IBM Plex Sans Arabic", "Cairo", "Segoe UI", Tahoma, sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: var(--es-ink);
+  background: var(--es-bg);
+  padding: clamp(14px, 2.5vw, 32px);
+  -webkit-font-smoothing: antialiased;
+}
+
+#escalationsView *,
+#escalationsView *::before,
+#escalationsView *::after { box-sizing: border-box; }
+
+#escalationsView .table-container {
+  max-width: 1600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.2vw, 28px);
+  background: transparent;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+#escalationsView h2,
+#escalationsView p { margin: 0; }
+
+/* ---------- Hero ---------- */
+#escalationsView .esc-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(24px, 4vw, 42px) clamp(22px, 4vw, 48px);
+  border-radius: 20px;
+  color: #fff;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.045) 0 1px, transparent 1px 36px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.045) 0 1px, transparent 1px 36px),
+    linear-gradient(135deg, #0c1c31 0%, #16355a 100%);
+  box-shadow: var(--es-shadow);
+}
+
+#escalationsView .esc-hero-badge {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 4px 14px;
+  font-size: .95rem;
+  font-weight: 600;
+  color: #e6eefa;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+}
+
+#escalationsView .esc-hero h2 {
+  font-size: clamp(1.9rem, 3.4vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.3;
+  color: #fff;
+}
+
+#escalationsView .esc-hero p {
+  margin-top: 10px;
+  max-width: 62ch;
+  font-size: clamp(1.05rem, 1.5vw, 1.2rem);
+  color: #c6d4e6;
+}
+
+#escalationsView .esc-hero-mark {
+  flex: none;
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 2.4rem;
+  color: #f5b544;
+  border: 2px solid rgba(245,181,68,.55);
+  background: rgba(245,181,68,.1);
+}
+
+/* ---------- KPI cards ---------- */
+#escalationsView .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(12px, 1.4vw, 18px);
+  padding: 0;
+  margin: 0;
+}
+
+#escalationsView .kpi-card {
+  --c: var(--es-count);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 22px 18px;
+  background: var(--es-surface);
+  border: 1px solid var(--es-line);
+  border-inline-start: 6px solid var(--c);
+  border-radius: var(--es-radius);
+  box-shadow: var(--es-shadow);
+  min-width: 0;
+}
+
+#escalationsView .kpi-card.info { --c: var(--es-count); }
+#escalationsView .kpi-card.kpi-total { --c: var(--es-total); }
+#escalationsView .kpi-card.success { --c: var(--es-returned); }
+#escalationsView .kpi-card.warning { --c: var(--es-remaining); }
+
+#escalationsView .kpi-label {
+  font-size: 1.08rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--es-ink-soft);
+}
+
+#escalationsView .kpi-value {
+  font-size: clamp(1.8rem, 2.5vw, 2.4rem);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--es-ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* شريط نسبة الرد */
+#escalationsView .esc-rate-track {
+  height: 10px;
+  margin-top: 4px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--c) 14%, #fff);
+  border-radius: 999px;
+}
+
+#escalationsView .esc-rate-bar {
+  height: 100%;
+  width: 0;
+  background: var(--c);
+  border-radius: 999px;
+  transition: width .8s cubic-bezier(.2, .8, .2, 1);
+}
+
+/* ---------- Data card ---------- */
+#escalationsView .esc-data-card {
+  background: var(--es-surface);
+  border: 1px solid var(--es-line);
+  border-radius: var(--es-radius);
+  box-shadow: var(--es-shadow);
+  padding: clamp(16px, 2.2vw, 28px);
+  min-width: 0;
+}
+
+/* ---------- Toolbar ---------- */
+#escalationsView .table-toolbar {
+  margin-bottom: 18px;
+  padding: 0;
+}
+
+#escalationsView .table-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+#escalationsView .table-search {
+  flex: 1 1 340px;
+  max-width: 560px;
+  height: 52px;
+  padding: 0 48px 0 16px;
+  font: inherit;
+  font-size: 1.05rem;
+  color: var(--es-ink);
+  background: #f7f9fc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2366788f' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat right 16px center;
+  border: 1.5px solid var(--es-line);
+  border-radius: 12px;
+  transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+
+#escalationsView .table-search::placeholder { color: #8a99ad; }
+
+#escalationsView .esc-sort-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 260px;
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--es-ink-soft);
+}
+
+#escalationsView .esc-sort-control .form-select {
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--es-ink);
+  background-color: #f7f9fc;
+  border: 1.5px solid var(--es-line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+#escalationsView .table-search:focus,
+#escalationsView .esc-sort-control .form-select:focus {
+  outline: none;
+  background-color: #fff;
+  border-color: var(--es-total);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, .14);
+}
+
+/* ---------- Table ---------- */
+#escalationsView .data-table-wrapper {
+  width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--es-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+#escalationsView #tblEscalations {
+  width: 100%;
+  min-width: 1500px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 1.05rem;
+}
+
+#escalationsView #tblEscalations thead th {
+  padding: 16px 16px;
+  text-align: start;
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #fff;
+  background: var(--es-ink);
+  white-space: nowrap;
+}
+
+#escalationsView #tblEscalations tbody td {
+  padding: 14px 16px;
+  color: var(--es-ink);
+  border-bottom: 1px solid var(--es-line-soft);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+#escalationsView #tblEscalations tbody tr:nth-child(even) td { background: #f8fafd; }
+#escalationsView #tblEscalations tbody tr:hover td { background: #eaf1fb; }
+#escalationsView #tblEscalations tbody tr:last-child td { border-bottom: 0; }
+
+/* أول عمود (رقم المستخلص) ثابت وقت الـ scroll الأفقي */
+#escalationsView #tblEscalations thead th:first-child,
+#escalationsView #tblEscalations tbody td:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+  box-shadow: -1px 0 0 var(--es-line);
+}
+#escalationsView #tblEscalations tbody td:first-child { background: #fff; font-weight: 700; }
+#escalationsView #tblEscalations tbody tr:nth-child(even) td:first-child { background: #f8fafd; }
+#escalationsView #tblEscalations tbody tr:hover td:first-child { background: #eaf1fb; }
+
+/* عرض الأعمدة */
+#escalationsView .col-inv-no   { min-width: 130px; }
+#escalationsView .col-inv-date { min-width: 140px; white-space: nowrap; }
+#escalationsView .col-owner    { min-width: 150px; }
+#escalationsView .col-project  { min-width: 190px; }
+#escalationsView .col-contract { min-width: 190px; }
+#escalationsView .col-desc     { min-width: 260px; }
+#escalationsView .col-amount,
+#escalationsView .col-ret-amt  { min-width: 140px; }
+#escalationsView .col-follow-up,
+#escalationsView .col-status   { min-width: 160px; }
+#escalationsView .col-resp-date { min-width: 140px; white-space: nowrap; }
+#escalationsView .col-days     { min-width: 110px; }
+
+#escalationsView tbody td.col-desc { white-space: normal; line-height: 1.6; }
+
+/* ألوان الأرقام */
+#escalationsView tbody td.col-amount { color: var(--es-total); font-weight: 700; }
+#escalationsView tbody td.col-ret-amt { color: var(--es-returned); font-weight: 700; }
+#escalationsView tbody td.col-days { font-weight: 600; text-align: center; }
+#escalationsView thead th.col-days { text-align: center; }
+
+/* ---------- Footer totals ---------- */
+#escalationsView #tblEscalations tfoot td {
+  padding: 0;
+  background: #eef3fa;
+  border-top: 2px solid var(--es-ink);
+}
+
+#escalationsView .esc-total-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 18px;
+  position: sticky;
+  inset-inline-start: 0;
+  max-width: 100vw;
+}
+
+#escalationsView .esc-total-summary span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: .98rem;
+  font-weight: 500;
+  color: var(--es-ink-soft);
+}
+
+#escalationsView .esc-total-summary strong {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--es-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Pagination ---------- */
+#escalationsView [id^="pagination-"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+#escalationsView [id^="pagination-"]:empty { display: none; }
+
+#escalationsView [id^="pagination-"] button,
+#escalationsView [id^="pagination-"] a {
+  min-width: 42px;
+  height: 42px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--es-ink);
+  background: #fff;
+  border: 1.5px solid var(--es-line);
+  border-radius: 10px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-grid;
+  place-items: center;
+  transition: background .15s, border-color .15s;
+}
+
+#escalationsView [id^="pagination-"] button:hover:not(:disabled),
+#escalationsView [id^="pagination-"] a:hover {
+  background: #eaf1fb;
+  border-color: var(--es-total);
+}
+
+#escalationsView [id^="pagination-"] .active,
+#escalationsView [id^="pagination-"] [aria-current="page"] {
+  color: #fff;
+  background: var(--es-ink);
+  border-color: var(--es-ink);
+}
+
+#escalationsView [id^="pagination-"] button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---------- Focus ---------- */
+#escalationsView :focus-visible {
+  outline: 3px solid rgba(29, 78, 216, .45);
+  outline-offset: 2px;
+}
+
+/* =========================================================
+   Responsive
+   ========================================================= */
+@media (max-width: 1280px) {
+  #escalationsView .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  #escalationsView .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  #escalationsView { font-size: 1rem; padding: 12px; }
+  #escalationsView .esc-hero { border-radius: 16px; }
+  #escalationsView .esc-hero-mark { display: none; }
+  #escalationsView .kpi-grid { grid-template-columns: 1fr; }
+  #escalationsView .table-search,
+  #escalationsView .esc-sort-control { flex: 1 1 100%; max-width: none; }
+  #escalationsView .esc-total-summary { grid-template-columns: 1fr 1fr; padding: 14px; }
+  #escalationsView .esc-total-summary span:first-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 420px) {
+  #escalationsView .esc-total-summary { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #escalationsView * { transition: none !important; }
+}
+
+@media print {
+  #escalationsView { background: #fff; padding: 0; }
+  #escalationsView .esc-hero { color: #000; background: #fff; border: 1px solid #000; }
+  #escalationsView .esc-hero h2,
+  #escalationsView .esc-hero p { color: #000; }
+  #escalationsView .table-toolbar,
+  #escalationsView [id^="pagination-"] { display: none; }
+}
+
+

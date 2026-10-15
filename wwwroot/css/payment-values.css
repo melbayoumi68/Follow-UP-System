@@ -1,0 +1,546 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap");
+
+/* =========================================================
+   صفحة قيمة الدفعات المضافة — كل الـ styles متقيّدة بـ #paymentValuesView
+   عشان ماتأثرش على باقي صفحات الـ ERP
+   ========================================================= */
+
+#paymentValuesView {
+  --pv-ink: #10233b;          /* كحلي غامق: العناوين والهيدر */
+  --pv-ink-soft: #3d5068;     /* النصوص الثانوية */
+  --pv-muted: #66788f;
+  --pv-bg: #f2f5f9;
+  --pv-surface: #ffffff;
+  --pv-line: #dde4ed;
+  --pv-line-soft: #eaeff5;
+
+  --pv-total: #1d4ed8;        /* إجمالي الدفعات */
+  --pv-deducted: #0f766e;     /* المخصوم */
+  --pv-remaining: #b45309;    /* المتبقي */
+  --pv-count: #475569;        /* عدد العقود */
+
+  --pv-radius: 16px;
+  --pv-shadow: 0 1px 2px rgba(16, 35, 59, .05), 0 8px 24px rgba(16, 35, 59, .06);
+
+  direction: rtl;
+  font-family: "IBM Plex Sans Arabic", "Cairo", "Segoe UI", Tahoma, sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: var(--pv-ink);
+  background: var(--pv-bg);
+  padding: clamp(14px, 2.5vw, 32px);
+  -webkit-font-smoothing: antialiased;
+}
+
+#paymentValuesView *,
+#paymentValuesView *::before,
+#paymentValuesView *::after {
+  box-sizing: border-box;
+}
+
+#paymentValuesView .table-container {
+  max-width: 1480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.2vw, 28px);
+  background: transparent;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+#paymentValuesView h2,
+#paymentValuesView h3,
+#paymentValuesView p {
+  margin: 0;
+}
+
+/* ---------- Hero ---------- */
+#paymentValuesView .payment-values-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(24px, 4vw, 44px) clamp(22px, 4vw, 48px);
+  border-radius: 20px;
+  color: #fff;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.045) 0 1px, transparent 1px 36px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.045) 0 1px, transparent 1px 36px),
+    linear-gradient(135deg, #0c1c31 0%, #16355a 100%);
+  box-shadow: var(--pv-shadow);
+}
+
+#paymentValuesView .payment-values-hero > div:first-child {
+  position: relative;
+  max-width: 760px;
+}
+
+#paymentValuesView .payment-values-hero h2 {
+  font-size: clamp(1.9rem, 3.4vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.3;
+  color: #fff;
+}
+
+#paymentValuesView .payment-values-hero p {
+  margin-top: 10px;
+  font-size: clamp(1.05rem, 1.5vw, 1.2rem);
+  color: #c6d4e6;
+  max-width: 62ch;
+}
+
+#paymentValuesView .payment-values-hero .payment-values-eyebrow {
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255, 255, 255, .22);
+  color: #e6eefa;
+}
+
+#paymentValuesView .payment-values-hero-mark {
+  flex: none;
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 2.4rem;
+  color: #f5b544;
+  border: 2px solid rgba(245, 181, 68, .55);
+  background: rgba(245, 181, 68, .1);
+}
+
+/* ---------- Eyebrow (التصنيف الصغير) ---------- */
+#paymentValuesView .payment-values-eyebrow {
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--pv-total);
+}
+
+/* ---------- KPI cards ---------- */
+#paymentValuesView .payment-values-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(12px, 1.6vw, 20px);
+}
+
+#paymentValuesView .payment-kpi-card {
+  --c: var(--pv-count);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "icon label"
+    "value value"
+    "note note";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 22px 24px 20px;
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-line);
+  border-inline-start: 6px solid var(--c);
+  border-radius: var(--pv-radius);
+  box-shadow: var(--pv-shadow);
+}
+
+#paymentValuesView .payment-kpi-total { --c: var(--pv-total); }
+#paymentValuesView .payment-kpi-deducted { --c: var(--pv-deducted); }
+#paymentValuesView .payment-kpi-remaining { --c: var(--pv-remaining); }
+#paymentValuesView .payment-kpi-count { --c: var(--pv-count); }
+
+#paymentValuesView .payment-kpi-icon {
+  grid-area: icon;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, #fff);
+}
+
+#paymentValuesView .payment-kpi-label {
+  grid-area: label;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--pv-ink-soft);
+}
+
+#paymentValuesView .payment-kpi-card strong {
+  grid-area: value;
+  margin-top: 10px;
+  font-size: clamp(1.9rem, 2.8vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--pv-ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+#paymentValuesView .payment-kpi-card small {
+  grid-area: note;
+  font-size: .98rem;
+  color: var(--pv-muted);
+}
+
+/* ---------- Section cards (جداول + سجل التدقيق) ---------- */
+#paymentValuesView .payment-transactions-section {
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-line);
+  border-radius: var(--pv-radius);
+  box-shadow: var(--pv-shadow);
+  padding: clamp(18px, 2.4vw, 30px);
+  min-width: 0;
+}
+
+#paymentValuesView .payment-section-heading {
+  margin-bottom: 18px;
+}
+
+#paymentValuesView .payment-section-heading h3 {
+  margin-top: 4px;
+  font-size: clamp(1.4rem, 2.2vw, 1.75rem);
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--pv-ink);
+}
+
+#paymentValuesView .payment-section-heading p {
+  margin-top: 4px;
+  font-size: 1.05rem;
+  color: var(--pv-ink-soft);
+}
+
+/* ---------- Toolbar + search ---------- */
+#paymentValuesView .table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+#paymentValuesView .table-toolbar-left {
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+
+#paymentValuesView .table-search {
+  width: 100%;
+  height: 52px;
+  padding: 0 48px 0 16px;
+  font: inherit;
+  font-size: 1.05rem;
+  color: var(--pv-ink);
+  background: #f7f9fc url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2366788f' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat right 16px center;
+  border: 1.5px solid var(--pv-line);
+  border-radius: 12px;
+  transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+
+#paymentValuesView .table-search::placeholder { color: #8a99ad; }
+
+#paymentValuesView .table-search:focus {
+  outline: none;
+  background-color: #fff;
+  border-color: var(--pv-total);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, .14);
+}
+
+/* ---------- Tables ---------- */
+#paymentValuesView .data-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--pv-line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+#paymentValuesView .payment-values-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 1.05rem;
+}
+
+#paymentValuesView .payment-values-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 16px 18px;
+  text-align: start;
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #fff;
+  background: var(--pv-ink);
+  white-space: nowrap;
+}
+
+#paymentValuesView .payment-values-table tbody td {
+  padding: 15px 18px;
+  color: var(--pv-ink);
+  border-bottom: 1px solid var(--pv-line-soft);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+#paymentValuesView .payment-values-table tbody tr:nth-child(even) td { background: #f8fafd; }
+#paymentValuesView .payment-values-table tbody tr:hover td { background: #eaf1fb; }
+#paymentValuesView .payment-values-table tbody tr:last-child td { border-bottom: 0; }
+
+/* أول عمودين نص، الباقي أرقام */
+#paymentValuesView #tblPaymentValues tbody td:nth-child(n+3),
+#paymentValuesView #tblPaymentValues thead th:nth-child(n+3) {
+  text-align: center;
+}
+
+#paymentValuesView #tblPaymentValues tbody td:nth-child(1) { font-weight: 600; }
+#paymentValuesView #tblPaymentValues tbody td:nth-child(3) { font-weight: 700; color: var(--pv-total); }
+#paymentValuesView #tblPaymentValues tbody td:nth-child(5) { color: var(--pv-deducted); font-weight: 600; }
+#paymentValuesView #tblPaymentValues tbody td:nth-child(6) { color: var(--pv-remaining); font-weight: 700; }
+
+/* ---------- Footer totals ---------- */
+#paymentValuesView .payment-values-table tfoot td {
+  padding: 0;
+  background: #eef3fa;
+  border-top: 2px solid var(--pv-ink);
+}
+
+#paymentValuesView .payment-values-total-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+#paymentValuesView .payment-values-total-summary span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: .98rem;
+  font-weight: 500;
+  color: var(--pv-ink-soft);
+}
+
+#paymentValuesView .payment-values-total-summary strong {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--pv-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* خلّي الفوتر ثابت العرض لما الجدول يعمل scroll */
+#paymentValuesView .payment-values-total-summary { position: sticky; inset-inline-start: 0; }
+
+/* ---------- Pagination (يدعم أغلب أشكال الـ markup) ---------- */
+#paymentValuesView [id^="pagination-"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+#paymentValuesView [id^="pagination-"]:empty { display: none; }
+
+#paymentValuesView [id^="pagination-"] button,
+#paymentValuesView [id^="pagination-"] a {
+  min-width: 42px;
+  height: 42px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--pv-ink);
+  background: #fff;
+  border: 1.5px solid var(--pv-line);
+  border-radius: 10px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-grid;
+  place-items: center;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+#paymentValuesView [id^="pagination-"] button:hover:not(:disabled),
+#paymentValuesView [id^="pagination-"] a:hover {
+  background: #eaf1fb;
+  border-color: var(--pv-total);
+}
+
+#paymentValuesView [id^="pagination-"] .active,
+#paymentValuesView [id^="pagination-"] [aria-current="page"] {
+  color: #fff;
+  background: var(--pv-ink);
+  border-color: var(--pv-ink);
+}
+
+#paymentValuesView [id^="pagination-"] button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---------- Charts ---------- */
+#paymentValuesView .payment-values-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(14px, 1.8vw, 24px);
+}
+
+#paymentValuesView .payment-chart-card {
+  min-width: 0;
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-line);
+  border-radius: var(--pv-radius);
+  box-shadow: var(--pv-shadow);
+  padding: clamp(18px, 2.4vw, 30px);
+}
+
+#paymentValuesView .payment-chart-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+#paymentValuesView .payment-chart-heading h3 {
+  margin-top: 4px;
+  font-size: clamp(1.35rem, 2vw, 1.65rem);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+#paymentValuesView .payment-chart-heading p {
+  margin-top: 2px;
+  font-size: 1rem;
+  color: var(--pv-ink-soft);
+}
+
+#paymentValuesView .payment-chart-heading > span {
+  flex: none;
+  padding: 5px 14px;
+  font-size: .92rem;
+  font-weight: 600;
+  color: var(--pv-ink-soft);
+  background: #eef3fa;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* مهم: الـ canvas لازم يتحط جوه wrapper له ارتفاع ثابت + Chart.js maintainAspectRatio:false */
+#paymentValuesView .payment-chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 340px;
+}
+
+#paymentValuesView .payment-chart-canvas-wrap canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ---------- API reference (لو فعّلتيه تاني) ---------- */
+#paymentValuesView .payment-api-reference {
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-line);
+  border-radius: var(--pv-radius);
+  box-shadow: var(--pv-shadow);
+  padding: clamp(18px, 2.4vw, 30px);
+}
+
+#paymentValuesView .payment-api-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+#paymentValuesView .payment-api-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid var(--pv-line);
+  border-radius: 12px;
+  background: #f8fafd;
+}
+
+#paymentValuesView .payment-api-card code {
+  direction: ltr;
+  text-align: left;
+  font-size: .95rem;
+  overflow-wrap: anywhere;
+}
+
+#paymentValuesView .payment-api-method {
+  align-self: flex-start;
+  padding: 2px 12px;
+  font-size: .85rem;
+  font-weight: 700;
+  color: #fff;
+  border-radius: 6px;
+  background: var(--pv-count);
+}
+#paymentValuesView .method-get { background: var(--pv-deducted); }
+#paymentValuesView .method-post { background: var(--pv-total); }
+#paymentValuesView .method-put { background: var(--pv-remaining); }
+#paymentValuesView .payment-api-card-muted { opacity: .7; }
+
+/* ---------- Keyboard focus ---------- */
+#paymentValuesView :focus-visible {
+  outline: 3px solid rgba(29, 78, 216, .45);
+  outline-offset: 2px;
+}
+
+/* =========================================================
+   Responsive
+   ========================================================= */
+@media (max-width: 1180px) {
+  #paymentValuesView .payment-values-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #paymentValuesView .payment-values-charts { grid-template-columns: 1fr; }
+  #paymentValuesView .payment-values-total-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  #paymentValuesView { font-size: 1rem; padding: 12px; }
+  #paymentValuesView .payment-values-hero { border-radius: 16px; }
+  #paymentValuesView .payment-values-hero-mark { display: none; }
+  #paymentValuesView .payment-values-kpis { grid-template-columns: 1fr; }
+  #paymentValuesView .payment-kpi-card { padding: 18px 18px 16px; }
+  #paymentValuesView .table-toolbar-left { max-width: none; flex-basis: 100%; }
+  #paymentValuesView .payment-chart-heading { flex-direction: column; align-items: flex-start; }
+  #paymentValuesView .payment-chart-canvas-wrap { height: 280px; }
+  #paymentValuesView .payment-values-table { min-width: 760px; }
+  #paymentValuesView .payment-values-total-summary { grid-template-columns: 1fr 1fr; padding: 14px; }
+  #paymentValuesView .payment-values-total-summary strong { font-size: 1.2rem; }
+}
+
+@media (max-width: 420px) {
+  #paymentValuesView .payment-values-total-summary { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #paymentValuesView * { transition: none !important; }
+}
+
+@media print {
+  #paymentValuesView { background: #fff; padding: 0; }
+  #paymentValuesView .payment-values-hero { color: #000; background: #fff; border: 1px solid #000; }
+  #paymentValuesView .payment-values-hero h2,
+  #paymentValuesView .payment-values-hero p { color: #000; }
+  #paymentValuesView .table-toolbar,
+  #paymentValuesView [id^="pagination-"] { display: none; }
+}

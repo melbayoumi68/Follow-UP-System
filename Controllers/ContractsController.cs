@@ -69,6 +69,9 @@ public class ContractsController(AppDbContext db) : ControllerBase
         if (dto.ContractDuration <= 0)
             return BadRequest(new { success = false, message = "مدة العقد يجب أن تكون أكبر من صفر (بالأيام)" });
 
+        if (dto.PaymentValue < 0)
+            return BadRequest(new { success = false, message = "قيمة الدفعة يجب أن تكون أكبر من أو تساوي صفر" });
+
         // Backend calculates EndDate; client must not control it.
         // Rule: EndDate = StartDate (SignDate) + DurationDays
         var endDate = dto.SignDate.Value.AddDays(dto.ContractDuration);
@@ -133,6 +136,9 @@ public class ContractsController(AppDbContext db) : ControllerBase
 
         if (dto.ContractDuration <= 0)
             return BadRequest(new { success = false, message = "مدة العقد يجب أن تكون أكبر من صفر (بالأيام)" });
+
+        if (dto.PaymentValue < 0)
+            return BadRequest(new { success = false, message = "قيمة الدفعة يجب أن تكون أكبر من أو تساوي صفر" });
 
         // Recalculate EndDate whenever SignDate or DurationDays is updated.
         var endDate = dto.SignDate.Value.AddDays(dto.ContractDuration);

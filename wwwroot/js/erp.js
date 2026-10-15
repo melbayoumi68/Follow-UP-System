@@ -797,8 +797,9 @@ const SummaryEngine = {
         const rows = document.querySelectorAll("#tblEscalations tbody tr");
         rows.forEach((row) => {
           if (
-            row.style.display !== "none" &&
-            !row.querySelector("td[colspan]")
+            row.getAttribute("data-filter-match") !== "false" &&
+            !row.querySelector("td[colspan]") &&
+            row.getAttribute("data-replyable") !== "false"
           ) {
             const key = row.getAttribute("data-key");
             const amt = parseFloat(row.getAttribute("data-amt")) || 0;
@@ -918,6 +919,7 @@ const PAGE_TO_MODULE = {
   ownersView: "owners",
   projectsView: "projects",
   contractsView: "contracts",
+  paymentValuesView: "contracts",
   invoicesView: "invoices",
   execPositionView: "execPosition",
   costControlView: "costControl",
@@ -1955,6 +1957,7 @@ function applyBootstrapToState(remote) {
     voAmount: parseFloat(c.voAmount ?? c.VoAmount) || 0,
     claimsAmount: parseFloat(c.claimsAmount ?? c.ClaimsAmount) || 0,
     vatAmount: parseFloat(c.vatAmount ?? c.VatAmount) || 0,
+    paymentValue: c.paymentValue ?? c.PaymentValue ?? null,
     signDate: c.signDate ?? c.SignDate ?? null,
     contractDuration: parseInt(c.contractDuration ?? c.ContractDuration) || 0,
     endDate: c.endDate ?? c.EndDate ?? null,
@@ -2075,6 +2078,10 @@ function normalizeBootstrapPayload(raw) {
     voAmount: _dec(c.voAmount),
     claimsAmount: _dec(c.claimsAmount),
     vatAmount: _dec(c.vatAmount),
+    paymentValue:
+      c.paymentValue === null || c.paymentValue === undefined || c.paymentValue === ""
+        ? null
+        : _dec(c.paymentValue),
     paymentTerms: _int(c.paymentTerms),
     signDate: _dateOrNull(c.signDate),
     contractDuration: _int(c.contractDuration),
@@ -2401,6 +2408,7 @@ const PAGE_TITLES = {
   ownersView: "إدارة الملاك",
   projectsView: "إدارة المشروعات",
   contractsView: "إدارة العقود",
+  paymentValuesView: "قيمة الدفعات المضافة",
   invoicesView: "إدارة المستخلصات",
   socialInsuranceView: "التأمينات الاجتماعية",
   execPositionView: "الموقف التنفيذي",
@@ -2450,6 +2458,11 @@ function activatePage(pageId, { persist = true } = {}) {
     // إعادة إظهار شريط الفلاتر عند مغادرة صفحة مراقبة التكلفة
     const filterBar = document.getElementById("global-filters-bar");
     if (filterBar) filterBar.style.display = "";
+  }
+  if (pageId === "paymentValuesView") {
+    requestAnimationFrame(() => {
+      loadPaymentValueAuditTransactions(window._paymentValueSummaryRows || []);
+    });
   }
 
   // Re-apply button visibility for the active page tables/actions
@@ -2528,7 +2541,9 @@ function initCentralizedEventListeners() {
       "tblOwners",
       "tblProjects",
       "tblContracts",
+      "tblPaymentValues",
       "tblInvoices",
+      "tblRepExec",
     ];
     input.addEventListener("input", function () {
       const query = this.value.toLowerCase().trim();
@@ -2539,9 +2554,21 @@ function initCentralizedEventListeners() {
         if (tableId === "tblOwners") renderOwners(state);
         else if (tableId === "tblProjects") renderProjects(state);
         else if (tableId === "tblContracts") renderContracts(state);
+        else if (tableId === "tblPaymentValues") {
+          _resetPagination("tblAdvancePaymentTransactions");
+          _resetPagination("tblPaymentValueHistory");
+          renderPaymentValues(filteredData || state);
+        }
         else if (tableId === "tblInvoices") {
           renderInvoices(state);
           SummaryEngine.update("invoices");
+        } else if (tableId === "tblRepExec") {
+          const rows = document.querySelectorAll("#tblRepExec tbody tr");
+          rows.forEach((row) => {
+            row.setAttribute("data-filter-match", String(row.textContent.toLowerCase().includes(query)));
+          });
+          paginateFilteredDomTable("tblRepExec", "pagination-tblRepExec");
+          updateRepExecFooter();
         }
       } else {
         // Non-paginated tables: DOM-based row filtering (escalations, reports, etc.)
@@ -2562,11 +2589,12 @@ function initCentralizedEventListeners() {
   bindSearch("searchOwners", "tblOwners");
   bindSearch("searchProjects", "tblProjects");
   bindSearch("searchContracts", "tblContracts");
+  bindSearch("searchPaymentValues", "tblPaymentValues");
   bindSearch("searchInvoices", "tblInvoices", () =>
     SummaryEngine.update("invoices"),
   );
   initInvoiceDateSortHeader();
-  bindSearch("searchEscalations", "tblEscalations", filterEscalationsByStatus);
+  bindSearch("searchEscalations", "tblEscalations", () => filterEscalationsByStatus(true));
 
   bindSearch("searchRepExec", "tblRepExec", updateRepExecFooter);
   bindSearch("searchRepEsc", "tblRepEsc", () => {
@@ -3032,15 +3060,35 @@ function initCentralizedEventListeners() {
         if (key) {
           if (!state.escalationsResponses[key])
             state.escalationsResponses[key] = {};
-          const newRetAmt = parseFloat(e.target.value) || 0;
+          const tr = e.target.closest("tr");
+          const amount = Math.max(0, parseFloat(tr?.getAttribute("data-amt")) || 0);
+          const newRetAmt = Math.min(amount, Math.max(0, parseFloat(e.target.value) || 0));
+          e.target.value = newRetAmt;
+          const newStatus = newRetAmt >= amount && amount > 0
+            ? ESC_STATUS_DONE
+            : newRetAmt > 0 ? ESC_STATUS_PARTIAL : ESC_STATUS_PENDING;
+          state.escalationsResponses[key].responseStatus = newStatus;
           state.escalationsResponses[key].returnedAmount = newRetAmt;
+          if (tr) {
+            tr.setAttribute("data-status", newStatus);
+            const resultFilter = newStatus === ESC_STATUS_DONE
+              ? ESC_FILTER_REPLIED
+              : newRetAmt > 0 ? "partial" : "unpaid";
+            tr.setAttribute("data-filter-status", resultFilter);
+            tr.setAttribute("data-ret-amt", newRetAmt);
+            const statusCell = tr.querySelector(".col-status");
+            if (statusCell) {
+              const responseLabel = newStatus === ESC_STATUS_DONE
+                ? "تم الرد كليًا"
+                : newRetAmt > 0 ? "تم الرد جزئيًا" : "لم يتم الرد";
+              statusCell.innerHTML = `${responseLabel}<div class="esc-subtext">المتبقي: <span class="esc-remaining-ctrl">${fmtNum(Math.max(0, amount - newRetAmt))}</span></div>`;
+            }
+          }
 
           try {
             await erpApi.escalations.updatePayment(key, {
               invoiceDeductionId: key,
-              responseStatus: normalizeEscalationStatus(
-                state.escalationsResponses[key].responseStatus,
-              ),
+              responseStatus: newStatus,
               responseDate:
                 toDateOnly(state.escalationsResponses[key].responseDate) ||
                 null,
@@ -3051,6 +3099,7 @@ function initCentralizedEventListeners() {
             console.error("Escalation returned amount update failed:", err);
           }
 
+          filterEscalationsByStatus();
           SummaryEngine.update("escalations");
         }
       }
@@ -3149,7 +3198,7 @@ function populateModalContracts(projectId) {
 
 function applyGlobalFilters() {
   // Reset pagination when global filters change
-  ["owners", "projects", "contracts", "invoices"].forEach((t) =>
+  ["owners", "projects", "contracts", "invoices", "tblPaymentValues", "tblAdvancePaymentTransactions", "tblPaymentValueHistory"].forEach((t) =>
     _resetPagination(t),
   );
 
@@ -3228,6 +3277,7 @@ function applyGlobalFilters() {
   renderOwners(filteredData);
   renderProjects(filteredData);
   renderContracts(filteredData);
+  renderPaymentValues(filteredData);
   renderInvoices(filteredData);
   renderExecPosition(filteredData);
   renderEscalations(escData);
@@ -3246,10 +3296,22 @@ function checkEmptyTable(tbody, colSpan) {
  * REUSABLE PAGINATION SYSTEM
  * ================================================================ */
 const _paginationState = {};
+const TEN_ROW_PAGINATED_TABLES = new Set([
+  "tblRepExec",
+  "tblRepEsc",
+  "tblRepInv",
+  "tblEscalations",
+  "tblPaymentValues",
+  "tblAdvancePaymentTransactions",
+  "tblPaymentValueHistory",
+]);
 
 function _getPaginationState(tableId) {
   if (!_paginationState[tableId]) {
-    _paginationState[tableId] = { page: 1, pageSize: 25 };
+    _paginationState[tableId] = {
+      page: 1,
+      pageSize: TEN_ROW_PAGINATED_TABLES.has(tableId) ? 10 : 25,
+    };
   }
   return _paginationState[tableId];
 }
@@ -3264,7 +3326,38 @@ function _setPaginationPageSize(tableId, size) {
 }
 
 function _resetPagination(tableId) {
-  _paginationState[tableId] = { page: 1, pageSize: 25 };
+  _paginationState[tableId] = {
+    page: 1,
+    pageSize: TEN_ROW_PAGINATED_TABLES.has(tableId) ? 10 : 25,
+  };
+}
+
+function paginateFilteredDomTable(tableId, containerId, resetPage = true) {
+  const tbody = document.querySelector(`#${tableId} tbody`);
+  if (!tbody) return [];
+  const allRows = Array.from(tbody.querySelectorAll("tr")).filter(
+    (row) => !row.querySelector("td[colspan]"),
+  );
+  const matchingRows = allRows.filter(
+    (row) => row.getAttribute("data-filter-match") !== "false",
+  );
+  const pagination = _getPaginationState(tableId);
+  if (resetPage) pagination.page = 1;
+  const totalPages = Math.max(1, Math.ceil(matchingRows.length / pagination.pageSize));
+  pagination.page = Math.min(Math.max(1, pagination.page), totalPages);
+  const visibleRows = new Set(
+    matchingRows.slice(
+      (pagination.page - 1) * pagination.pageSize,
+      pagination.page * pagination.pageSize,
+    ),
+  );
+  allRows.forEach((row) => {
+    row.style.display = visibleRows.has(row) ? "" : "none";
+  });
+  renderPaginationBar(containerId, matchingRows.length, tableId, () =>
+    paginateFilteredDomTable(tableId, containerId, false),
+  );
+  return matchingRows;
 }
 
 /** Slice data array for the current page. */
@@ -3282,6 +3375,10 @@ function renderPaginationBar(containerId, totalItems, tableId, renderFn) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const ps = _getPaginationState(tableId);
+  if (TEN_ROW_PAGINATED_TABLES.has(tableId) && totalItems <= ps.pageSize) {
+    container.innerHTML = "";
+    return;
+  }
   const totalPages = Math.max(1, Math.ceil(totalItems / ps.pageSize));
 
   // Clamp current page
@@ -3318,11 +3415,13 @@ function renderPaginationBar(containerId, totalItems, tableId, renderFn) {
   });
   html += `<button class="pagination-btn" ${ps.page >= totalPages ? "disabled" : ""} data-paginate="${tableId}" data-page="next">التالي</button>`;
   html += `</div>`;
-  html += `<div class="pagination-size"><label>العرض:</label><select data-paginate-size="${tableId}">`;
-  [10, 25, 50, 100].forEach((s) => {
-    html += `<option value="${s}" ${s === ps.pageSize ? "selected" : ""}>${s}</option>`;
-  });
-  html += `</select></div>`;
+  if (!TEN_ROW_PAGINATED_TABLES.has(tableId)) {
+    html += `<div class="pagination-size"><label>العرض:</label><select data-paginate-size="${tableId}">`;
+    [10, 25, 50, 100].forEach((s) => {
+      html += `<option value="${s}" ${s === ps.pageSize ? "selected" : ""}>${s}</option>`;
+    });
+    html += `</select></div>`;
+  }
   html += `</div>`;
 
   container.innerHTML = html;
@@ -4277,7 +4376,7 @@ function renderContracts(data) {
         contractAmt > 0 ? Math.min(100, (totalGross / contractAmt) * 100) : 0;
       const modTotal = getContractModifiedTotal(c);
       const searchText =
-        `${c.id} ${c.name} ${proj.name} ${fmtNum(contractAmt)} ${fmtNum(modTotal)} ${fmtNum(totalGross)} ${fmtNum(execRate, 1)}% ${c.paymentTerms || 45} ${fmtDisplayDate(c.endDate)} ${c.status || ""}`.toLowerCase();
+        `${c.id} ${c.name} ${proj.name} ${fmtNum(contractAmt)} ${fmtNum(c.paymentValue)} ${fmtNum(modTotal)} ${fmtNum(totalGross)} ${fmtNum(execRate, 1)}% ${c.paymentTerms || 45} ${fmtDisplayDate(c.endDate)} ${c.status || ""}`.toLowerCase();
       return searchText.includes(q);
     });
   }
@@ -4313,6 +4412,7 @@ function renderContracts(data) {
                 <td><strong>${c.name}</strong></td>
                 <td>${proj.name}</td>
                 <td>${fmtNum(contractAmt)}</td>
+                <td class="contracts-advance-payment">${c.paymentValue !== null && c.paymentValue !== undefined && c.paymentValue !== "" ? `<span>${fmtNum(c.paymentValue)}</span>` : '<span class="contracts-no-advance">—</span>'}</td>
                 <td>${fmtNum(getContractModifiedTotal(c))}</td>
                 <td>${fmtNum(totalGross)}</td>
                 <td>${fmtNum(execRate, 1)}%</td>
@@ -4327,6 +4427,269 @@ function renderContracts(data) {
                 </td>
             `;
         document.querySelector("#tblContracts tbody").appendChild(tr);
+      });
+    },
+  );
+}
+
+function renderPaymentValues(data) {
+  const tbody = document.querySelector("#tblPaymentValues tbody");
+  if (!tbody) return;
+  const search = (window._searchTerms?.tblPaymentValues || "").trim().toLowerCase();
+  const rows = (data.contracts || [])
+    .filter((contract) => contract.paymentValue !== null && contract.paymentValue !== undefined && contract.paymentValue !== "")
+    .map((contract) => {
+      const project = (data.projects || []).find((item) => item.id === contract.projectId);
+      const paymentValue = Math.max(0, Number(contract.paymentValue) || 0);
+      const deducted = getAdvancePaymentDeducted(contract.id, data.invoices || []);
+      return {
+        contract,
+        projectName: project?.name || "-",
+        paymentValue,
+        percentage: Number(contract.amount) > 0 ? (paymentValue / Number(contract.amount)) * 100 : 0,
+        deducted,
+        remaining: paymentValue - deducted,
+      };
+    })
+    .filter((row) =>
+      `${row.projectName} ${row.contract.name || ""} ${row.contract.id || ""} ${row.paymentValue} ${row.deducted} ${row.remaining}`
+        .toLowerCase()
+        .includes(search),
+    );
+
+  const totals = rows.reduce(
+    (sum, row) => ({
+      paymentValue: sum.paymentValue + row.paymentValue,
+      deducted: sum.deducted + row.deducted,
+      remaining: sum.remaining + row.remaining,
+    }),
+    { paymentValue: 0, deducted: 0, remaining: 0 },
+  );
+  document.getElementById("paymentValuesFootCount").textContent = fmtNum(rows.length, 0);
+  document.getElementById("paymentValuesFootTotal").textContent = fmtNum(totals.paymentValue);
+  document.getElementById("paymentValuesFootDeducted").textContent = fmtNum(totals.deducted);
+  document.getElementById("paymentValuesFootRemaining").textContent = fmtNum(totals.remaining);
+  document.getElementById("paymentValuesCardTotal").textContent = fmtNum(totals.paymentValue);
+  document.getElementById("paymentValuesCardDeducted").textContent = fmtNum(totals.deducted);
+  document.getElementById("paymentValuesCardRemaining").textContent = fmtNum(totals.remaining);
+  document.getElementById("paymentValuesCardCount").textContent = fmtNum(rows.length, 0);
+  window._paymentValueSummaryRows = rows;
+  if (document.getElementById("paymentValuesView")?.classList.contains("active")) {
+    requestAnimationFrame(() => renderPaymentValueCharts(rows));
+  }
+
+  renderPaginatedTable(
+    "tblPaymentValues",
+    rows,
+    "pagination-tblPaymentValues",
+    "#tblPaymentValues tbody",
+    6,
+    (pageRows) => {
+      pageRows.forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(row.projectName)}</td>
+          <td><strong>${escapeHtml(row.contract.name || "-")}</strong><small class="payment-contract-code">${escapeHtml(row.contract.id || "")}</small></td>
+          <td>${fmtNum(row.paymentValue)}</td>
+          <td>${fmtNum(row.percentage, 2)}%</td>
+          <td>${fmtNum(row.deducted)}</td>
+          <td class="${row.remaining < 0 ? "payment-values-overdrawn" : ""}">${fmtNum(row.remaining)}</td>`;
+        tbody.appendChild(tr);
+      });
+    },
+  );
+
+  const contractsById = new Map(rows.map((row) => [String(row.contract.id), row]));
+  const transactions = [];
+  (data.invoices || []).forEach((invoice) => {
+    const contractRow = contractsById.get(String(invoice.contractId || ""));
+    if (!contractRow) return;
+    (invoice.deductions || []).forEach((deduction) => {
+      if (!isAdvancePaymentDeduction(deduction)) return;
+      const amount = Math.max(0, Number(deduction.amount) || 0);
+      if (amount <= 0) return;
+      const searchable = `${contractRow.projectName} ${contractRow.contract.name || ""} ${invoice.number || ""} ${deduction.description || ""}`.toLowerCase();
+      if (search && !searchable.includes(search)) return;
+      transactions.push({
+        projectName: contractRow.projectName,
+        contractName: contractRow.contract.name || "-",
+        invoiceNumber: invoice.number || "-",
+        invoiceDate: invoice.date || "",
+        description: deduction.description || "خصم دفعة مقدمة",
+        amount,
+      });
+    });
+  });
+  transactions.sort((a, b) => String(b.invoiceDate).localeCompare(String(a.invoiceDate)));
+  renderPaginatedTable(
+    "tblAdvancePaymentTransactions",
+    transactions,
+    "pagination-tblAdvancePaymentTransactions",
+    "#tblAdvancePaymentTransactions tbody",
+    6,
+    (pageRows) => {
+      pageRows.forEach((transaction) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${escapeHtml(transaction.projectName)}</td><td>${escapeHtml(transaction.contractName)}</td><td>${escapeHtml(transaction.invoiceNumber)}</td><td>${fmtDisplayDate(transaction.invoiceDate) || "—"}</td><td>${escapeHtml(transaction.description)}</td><td class="payment-transaction-amount">${fmtNum(transaction.amount)}</td>`;
+        document.querySelector("#tblAdvancePaymentTransactions tbody").appendChild(tr);
+      });
+    },
+  );
+  renderPaymentValueHistory(
+    window._paymentValueAuditRows || [],
+    rows,
+  );
+}
+
+function renderPaymentValueCharts(rows) {
+  if (!window.Chart || !document.getElementById("paymentValuesView")?.classList.contains("active")) return;
+  const statusCanvas = document.getElementById("paymentValuesStatusChart");
+  const contractsCanvas = document.getElementById("paymentValuesContractsChart");
+  if (!statusCanvas || !contractsCanvas) return;
+
+  const totalDeducted = rows.reduce((sum, row) => sum + row.deducted, 0);
+  const totalRemaining = rows.reduce((sum, row) => sum + row.remaining, 0);
+  const totalPaymentValue = rows.reduce((sum, row) => sum + row.paymentValue, 0);
+  const recoveredRate = totalPaymentValue > 0 ? (totalDeducted / totalPaymentValue) * 100 : 0;
+  const palette = getComputedStyle(document.documentElement);
+  const primary = palette.getPropertyValue("--primary").trim() || "#2563eb";
+  const success = palette.getPropertyValue("--success").trim() || "#10b981";
+  const textColor = palette.getPropertyValue("--dark").trim() || "#1e293b";
+  const mutedColor = palette.getPropertyValue("--gray").trim() || "#64748b";
+  const centerTextPlugin = {
+    id: "paymentValuesCenterText",
+    afterDraw(chart) {
+      if (!chart.chartArea) return;
+      const { ctx, chartArea } = chart;
+      const centerX = (chartArea.left + chartArea.right) / 2;
+      const centerY = (chartArea.top + chartArea.bottom) / 2 - 3;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.fillStyle = mutedColor;
+      ctx.font = "600 13px Segoe UI, sans-serif";
+      ctx.fillText("نسبة الخصم", centerX, centerY - 8);
+      ctx.fillStyle = textColor;
+      ctx.font = "800 23px Segoe UI, sans-serif";
+      ctx.fillText(`${fmtNum(recoveredRate, 1)}%`, centerX, centerY + 22);
+      ctx.restore();
+    },
+  };
+  const existingStatus = window.Chart.getChart?.(statusCanvas);
+  if (existingStatus) existingStatus.destroy();
+  new window.Chart(statusCanvas.getContext("2d"), {
+    type: "doughnut",
+    data: {
+      labels: ["تم خصمه", "متبقي"],
+      datasets: [{ data: [Math.max(0, totalDeducted), Math.max(0, totalRemaining)], backgroundColor: [success, primary], hoverBackgroundColor: [success, primary], borderWidth: 4, borderColor: "#ffffff", hoverOffset: 12, spacing: 4 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "74%",
+      animation: { animateRotate: true, animateScale: true, duration: 1500, easing: "easeOutQuart" },
+      transitions: { active: { animation: { duration: 250 } } },
+      plugins: {
+        legend: { position: "bottom", rtl: true, labels: { usePointStyle: true, pointStyle: "circle", padding: 24, font: { size: 14, weight: "600" }, color: mutedColor } },
+        tooltip: { callbacks: { label: (context) => `${context.label}: ${fmtNum(context.raw)}` } },
+      },
+    },
+    plugins: [centerTextPlugin],
+  });
+
+  const topRows = [...rows].sort((a, b) => b.paymentValue - a.paymentValue).slice(0, 8).reverse();
+  const existingContracts = window.Chart.getChart?.(contractsCanvas);
+  if (existingContracts) existingContracts.destroy();
+  new window.Chart(contractsCanvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: topRows.map((row) => (row.contract.name || row.contract.id || "عقد").slice(0, 26)),
+      datasets: [
+        { label: "تم خصمه", data: topRows.map((row) => row.deducted), backgroundColor: success, hoverBackgroundColor: success, borderRadius: 10, borderSkipped: false, maxBarThickness: 27 },
+        { label: "المتبقي", data: topRows.map((row) => Math.max(0, row.remaining)), backgroundColor: primary, hoverBackgroundColor: primary, borderRadius: 10, borderSkipped: false, maxBarThickness: 27 },
+      ],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 1350, easing: "easeOutQuart" },
+      transitions: { active: { animation: { duration: 250 } } },
+      scales: { x: { stacked: true, grid: { color: "rgba(100,116,139,.14)" }, border: { display: false }, ticks: { color: mutedColor, font: { size: 12 }, callback: (value) => fmtNum(value, 0) } }, y: { stacked: true, grid: { display: false }, border: { display: false }, ticks: { color: textColor, font: { size: 13, weight: "600" } } } },
+      plugins: {
+        legend: { position: "bottom", rtl: true, labels: { usePointStyle: true, pointStyle: "roundedRect", padding: 24, font: { size: 14, weight: "600" }, color: mutedColor } },
+        tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${fmtNum(context.raw)}` } },
+      },
+    },
+  });
+}
+
+async function loadPaymentValueAuditTransactions(contractRows) {
+  const requestId = (window._paymentValueAuditRequestId || 0) + 1;
+  window._paymentValueAuditRequestId = requestId;
+  const uniqueRows = [...new Map(contractRows.map((row) => [String(row.contract.id), row])).values()];
+  if (!uniqueRows.length) {
+    window._paymentValueAuditRows = [];
+    renderPaymentValueHistory([], contractRows);
+    return;
+  }
+
+  const transactions = [];
+  for (let offset = 0; offset < uniqueRows.length; offset += 8) {
+    const batch = uniqueRows.slice(offset, offset + 8);
+    const batchResults = await Promise.all(
+      batch.map(async (row) => {
+        try {
+          const logs = await erpApi.contracts.getPaymentValueLogs(row.contract.id);
+          return (Array.isArray(logs) ? logs : []).map((log) => ({
+            projectName: row.projectName,
+            contractName: row.contract.name || "-",
+            ...log,
+          }));
+        } catch (error) {
+          console.warn(`Could not load payment value history for ${row.contract.id}:`, error);
+          return [];
+        }
+      }),
+    );
+    transactions.push(...batchResults.flat());
+    if (window._paymentValueAuditRequestId !== requestId) return;
+  }
+  window._paymentValueAuditRows = transactions.sort((a, b) =>
+    String(b.changedAt || b.ChangedAt || "").localeCompare(String(a.changedAt || a.ChangedAt || "")),
+  );
+  renderPaymentValueHistory(window._paymentValueAuditRows, window._paymentValueSummaryRows || contractRows);
+}
+
+function renderPaymentValueHistory(transactions, contractRows) {
+  const tbody = document.querySelector("#tblPaymentValueHistory tbody");
+  if (!tbody) return;
+  const query = (window._searchTerms?.tblPaymentValues || "").trim().toLowerCase();
+  const contractIds = new Set(contractRows.map((row) => String(row.contract.id)));
+  const rows = (transactions || []).filter((log) => {
+    const contractId = String(log.contractId || log.ContractId || "");
+    const searchable = `${log.projectName || ""} ${log.contractName || ""} ${log.note || log.Note || ""} ${log.changedByUsername || log.ChangedByUsername || ""} ${log.oldValue ?? log.OldValue ?? ""} ${log.newValue ?? log.NewValue ?? ""}`.toLowerCase();
+    return contractIds.has(contractId) && searchable.includes(query);
+  });
+  renderPaginatedTable(
+    "tblPaymentValueHistory",
+    rows,
+    "pagination-tblPaymentValueHistory",
+    "#tblPaymentValueHistory tbody",
+    7,
+    (pageRows) => {
+      pageRows.forEach((log) => {
+        const changedAt = log.changedAt || log.ChangedAt || "";
+        const parsedDate = changedAt ? new Date(changedAt) : null;
+        const changedAtDisplay = parsedDate && !Number.isNaN(parsedDate.getTime())
+          ? parsedDate.toLocaleString("ar-EG")
+          : "—";
+        const note = log.note || log.Note || "تعديل";
+        const isCreate = normalizeArabicText(note).includes("انشاء");
+        const oldValue = log.oldValue ?? log.OldValue;
+        const newValue = log.newValue ?? log.NewValue;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${escapeHtml(log.projectName || "-")}</td><td>${escapeHtml(log.contractName || "-")}</td><td><span class="payment-history-kind ${isCreate ? "is-create" : ""}">${escapeHtml(note)}</span></td><td>${oldValue == null ? "—" : fmtNum(oldValue)}</td><td class="payment-transaction-amount">${newValue == null ? "—" : fmtNum(newValue)}</td><td>${escapeHtml(log.changedByUsername || log.ChangedByUsername || "النظام")}</td><td>${escapeHtml(changedAtDisplay)}</td>`;
+        tbody.appendChild(tr);
       });
     },
   );
@@ -4912,6 +5275,11 @@ function getSocialInsuranceEscalationView(inv) {
 }
 
 function ensureEscStatusFilterUI() {
+  const sortSelect = document.getElementById("escInvoiceDateSort");
+  if (sortSelect && sortSelect.dataset.sortBound !== "1") {
+    sortSelect.dataset.sortBound = "1";
+    sortSelect.addEventListener("change", applyGlobalFilters);
+  }
   if (document.getElementById("escPageStatusFilter")) return;
 
   const searchInput = document.getElementById("searchEscalations");
@@ -4931,8 +5299,9 @@ function ensureEscStatusFilterUI() {
             <label for="escPageStatusDetailFilter" style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">تفصيل حالة قابلة للرد</label>
             <select class="form-select" id="escPageStatusDetailFilter">
                 <option value="${ESC_FILTER_ALL}">كل الحالات</option>
-                <option value="${ESC_FILTER_REPLIED}">تم الرد</option>
-                <option value="${ESC_FILTER_UNPAID}">غير مسدد</option>
+                <option value="${ESC_FILTER_REPLIED}">تم الرد كليًا</option>
+                <option value="partial">تم الرد جزئيًا</option>
+                <option value="unpaid">لم يتم الرد</option>
             </select>
         </div>`;
 
@@ -4970,10 +5339,10 @@ function ensureEscStatusFilterUI() {
 
   document
     .getElementById("escPageStatusFilter")
-    .addEventListener("change", filterEscalationsByStatus);
+    .addEventListener("change", () => filterEscalationsByStatus(true));
   document
     .getElementById("escPageStatusDetailFilter")
-    .addEventListener("change", filterEscalationsByStatus);
+    .addEventListener("change", () => filterEscalationsByStatus(true));
 }
 
 function renderEscalations(data) {
@@ -4982,10 +5351,16 @@ function renderEscalations(data) {
   if (!tbody) return;
   tbody.innerHTML = "";
 
-  data.invoices.forEach((inv) => {
+  const sortDirection = document.getElementById("escInvoiceDateSort")?.value || "desc";
+  [...data.invoices]
+    .sort((a, b) => {
+      const byDate = String(a.date || "").localeCompare(String(b.date || ""));
+      return sortDirection === "asc" ? byDate : -byDate;
+    })
+    .forEach((inv) => {
     if (inv.deductions && Array.isArray(inv.deductions)) {
       inv.deductions.forEach((d, idx) => {
-        // كل الاستقطاعات تظهر في التعليات سواء متابعة نعم أو لا
+        const isReplyable = Boolean(d.isRefundable);
         const amt = parseFloat(d.amount) || parseFloat(d.val) || 0;
         const escKey = d.id || `${inv.id}_${idx}`;
         const isInsuranceEscalation = isSocialInsuranceDeduction(d);
@@ -5011,13 +5386,13 @@ function renderEscalations(data) {
         }
 
         const days = computeEscalationDays(inv.date, mappedStatus, respDate);
-        const filterStatus = isInsuranceEscalation
-          ? insuranceView.status === "غير مسدد"
-            ? ESC_FILTER_UNPAID
-            : ESC_FILTER_REPLIED
-          : status === ESC_STATUS_PENDING
-            ? ESC_FILTER_NOT_REPLIED
-            : ESC_FILTER_REPLIED;
+        const filterStatus = !isReplyable
+          ? ESC_FILTER_NOT_REPLIED
+          : isInsuranceEscalation
+            ? insuranceView.status === "غير مسدد"
+              ? "unpaid"
+              : insuranceView.status === "مسدد جزئياً" ? "partial" : ESC_FILTER_REPLIED
+            : ESC_FILTER_UNPAID;
 
         const contract =
           state.contracts.find((c) => c.id === inv.contractId) || {};
@@ -5030,17 +5405,18 @@ function renderEscalations(data) {
         tr.setAttribute("data-amt", amt);
         tr.setAttribute("data-status", mappedStatus);
         tr.setAttribute("data-filter-status", filterStatus);
+        tr.setAttribute("data-replyable", String(isReplyable));
+        tr.setAttribute("data-invoice-date", inv.date || "");
 
-        // ---- Fixed 11-column structure for EVERY row ----
-        // 1 inv#  2 invDate  3 owner  4 project  5 contract
-        // 6 desc  7 amount  8 status  9 respDate  10 retAmt  11 days
+        // ---- Fixed 12-column structure for EVERY row ----
 
         if (isInsuranceEscalation) {
-          const paymentReference = insuranceView.payment.reference || "-";
           const paidText = fmtNum(insuranceView.paid);
-          const outstandingText = fmtNum(insuranceView.outstanding);
           tr.setAttribute("data-ret-amt", insuranceView.paid);
           tr.style.background = "var(--light)";
+          const insuranceResponseStatus = insuranceView.status === "مسدد"
+            ? "تم الرد كليًا"
+            : insuranceView.status === "مسدد جزئياً" ? "تم الرد جزئيًا" : "لم يتم الرد";
           tr.innerHTML = `
                         <td class="col-inv-no"><strong>${inv.number}</strong></td>
                         <td class="col-inv-date">${fmtDisplayDate(inv.date)}</td>
@@ -5053,14 +5429,10 @@ function renderEscalations(data) {
                             <div class="esc-subtext esc-hint">تُتابع وتُسدد من شاشة التأمينات الاجتماعية</div>
                         </td>
                         <td class="col-amount">${fmtNum(insuranceView.amount)}</td>
-                        <td class="col-status">
-                            ${socialInsuranceStatusBadge(insuranceView.status)}
-                            <div class="esc-subtext">المدفوع: ${paidText}</div>
-                            <div class="esc-subtext">المتبقي: ${outstandingText}</div>
-                            <div class="esc-subtext">مرجع: ${paymentReference}</div>
-                        </td>
-                        <td class="col-resp-date">${fmtDisplayDate(insuranceView.payment.paymentDate) || "—"}</td>
-                        <td class="col-ret-amt">${paidText}</td>
+                        <td class="col-follow-up">${isReplyable ? '<span class="badge badge-success">قابلة للرد</span>' : '<span class="badge badge-warning">غير قابلة للرد</span>'}</td>
+                        <td class="col-status">${isReplyable ? `${insuranceResponseStatus}<div class="esc-subtext">المتبقي: ${fmtNum(insuranceView.outstanding)}</div>` : "—"}</td>
+                        <td class="col-resp-date">${isReplyable ? (fmtDisplayDate(insuranceView.payment.paymentDate) || "—") : "—"}</td>
+                        <td class="col-ret-amt">${isReplyable ? paidText : "—"}</td>
                         <td class="col-days"><span class="days-value">${days}</span> <span class="days-unit">يوم</span></td>
                     `;
         } else {
@@ -5068,22 +5440,27 @@ function renderEscalations(data) {
             resp.returnedAmount !== undefined
               ? parseFloat(resp.returnedAmount) || 0
               : 0;
-          const showRetAmt =
-            status === ESC_STATUS_DONE || status === ESC_STATUS_PARTIAL;
-          tr.setAttribute("data-ret-amt", showRetAmt ? retAmt : 0);
-          // Always render the same cells; enable/disable content by status.
-          const dateDisabled = !showRetAmt ? "disabled" : "";
-          const retCell = showRetAmt
-            ? `<input type="number" step="any" class="form-control esc-ret-ctrl" data-key="${escKey}" value="${retAmt}" min="0" max="${amt}" title="المبلغ المُردّ">`
-            : `<span class="esc-empty">—</span>`;
-          const dateCell = `<input type="date" class="form-control esc-date-ctrl" data-key="${escKey}" value="${respDate}" lang="ar" ${dateDisabled}>`;
-          const statusCell =
-            status === ESC_STATUS_PENDING
-              ? `<span class="badge badge-primary">${ESC_STATUS_PENDING}</span>`
-              : `<select class="form-select esc-status-ctrl" data-key="${escKey}">
-                    <option value="${ESC_STATUS_PARTIAL}" ${status === ESC_STATUS_PARTIAL ? "selected" : ""}>${ESC_STATUS_PARTIAL}</option>
-                    <option value="${ESC_STATUS_DONE}" ${status === ESC_STATUS_DONE ? "selected" : ""}>${ESC_STATUS_DONE}</option>
-                </select>`;
+          const paid = Math.min(amt, Math.max(0, retAmt));
+          const paidStatus = paid >= amt && amt > 0;
+          const currentStatus = paidStatus
+            ? ESC_STATUS_DONE
+            : paid > 0 ? ESC_STATUS_PARTIAL : ESC_STATUS_PENDING;
+          tr.setAttribute("data-status", currentStatus);
+          const resultFilter = paidStatus ? ESC_FILTER_REPLIED : paid > 0 ? "partial" : "unpaid";
+          tr.setAttribute("data-filter-status", isReplyable ? resultFilter : ESC_FILTER_NOT_REPLIED);
+          tr.setAttribute("data-ret-amt", paid);
+          const retCell = isReplyable
+            ? `<input type="number" step="any" class="form-control esc-ret-ctrl" data-key="${escKey}" value="${paid}" min="0" max="${amt}" title="المبلغ المُردّ">`
+            : "—";
+          const dateCell = isReplyable
+            ? `<input type="date" class="form-control esc-date-ctrl" data-key="${escKey}" value="${respDate}" lang="ar">`
+            : "—";
+          const statusCell = isReplyable
+            ? '<span class="badge badge-success">قابلة للرد</span>'
+            : '<span class="badge badge-warning">غير قابلة للرد</span>';
+          const resultCell = !isReplyable ? "—" : `${paidStatus
+            ? "تم الرد كليًا"
+            : paid > 0 ? "تم الرد جزئيًا" : "لم يتم الرد"}<div class="esc-subtext">المتبقي: <span class="esc-remaining-ctrl">${fmtNum(Math.max(0, amt - paid))}</span></div>`;
 
           tr.innerHTML = `
                         <td class="col-inv-no"><strong>${inv.number}</strong></td>
@@ -5093,9 +5470,8 @@ function renderEscalations(data) {
                         <td class="col-contract">${contract.name || "-"}</td>
                         <td class="col-desc">${d.description || "تعلية مستقطعة"}</td>
                         <td class="col-amount">${fmtNum(amt)}</td>
-                        <td class="col-status">
-                            ${statusCell}
-                        </td>
+                        <td class="col-follow-up">${statusCell}</td>
+                        <td class="col-status">${resultCell}</td>
                         <td class="col-resp-date">${dateCell}</td>
                         <td class="col-ret-amt">${retCell}</td>
                         <td class="col-days"><span class="days-value">${days}</span> <span class="days-unit">يوم</span></td>
@@ -5106,12 +5482,13 @@ function renderEscalations(data) {
     }
   });
 
-  checkEmptyTable(tbody, 11);
+  checkEmptyTable(tbody, 12);
   SummaryEngine.update("escalations");
   filterEscalationsByStatus();
 }
 
-function filterEscalationsByStatus() {
+function filterEscalationsByStatus(resetPage = false) {
+  if (resetPage) _setPaginationPage("tblEscalations", 1);
   const mainFilter =
     document.getElementById("escPageStatusFilter")?.value || ESC_FILTER_ALL;
   const detailFilter =
@@ -5138,8 +5515,10 @@ function filterEscalationsByStatus() {
         status !== ESC_FILTER_NOT_REPLIED &&
         (detailFilter === ESC_FILTER_ALL || status === detailFilter));
     const searchMatches = !query || tr.textContent.toLowerCase().includes(query);
-    tr.style.display = statusMatches && searchMatches ? "" : "none";
+    const isMatch = statusMatches && searchMatches;
+    tr.setAttribute("data-filter-match", String(isMatch));
   });
+  paginateFilteredDomTable("tblEscalations", "pagination-tblEscalations", false);
   SummaryEngine.update("escalations");
 }
 
@@ -5170,13 +5549,7 @@ function renderRepExecPosition(data) {
     sumInvTotal = 0;
 
   const allContracts = data.contracts || [];
-  const pageContracts = paginate(allContracts, "tblRepExec");
-  renderPaginationBar(
-    "pagination-tblRepExec",
-    allContracts.length,
-    "tblRepExec",
-    () => renderRepExecPosition(data),
-  );
+  const pageContracts = allContracts;
 
   pageContracts.forEach((c) => {
     const proj = data.projects.find((p) => p.id === c.projectId) || {};
@@ -5269,6 +5642,12 @@ function renderRepExecPosition(data) {
   });
 
   checkEmptyTable(tbody, 25);
+  const query = (document.getElementById("searchRepExec")?.value || "").toLowerCase().trim();
+  tbody.querySelectorAll("tr").forEach((row) => {
+    if (!row.querySelector("td[colspan]"))
+      row.setAttribute("data-filter-match", String(!query || row.textContent.toLowerCase().includes(query)));
+  });
+  paginateFilteredDomTable("tblRepExec", "pagination-tblRepExec");
   updateRepExecFooter();
 }
 
@@ -5290,7 +5669,7 @@ function updateRepExecFooter() {
 
   const rows = document.querySelectorAll("#tblRepExec tbody tr");
   rows.forEach((r) => {
-    if (r.style.display !== "none" && !r.querySelector("td[colspan]")) {
+    if (r.getAttribute("data-filter-match") !== "false" && !r.querySelector("td[colspan]")) {
       count++;
       const getVal = (idx) =>
         parseFloat(r.children[idx]?.textContent.replace(/,/g, "")) || 0;
@@ -5451,6 +5830,7 @@ function renderRepEscalations(data) {
   });
 
   checkEmptyTable(tbody, 11);
+  filterRepEscRows();
   updateRepEscFooter();
 }
 
@@ -5462,7 +5842,7 @@ function updateRepEscFooter() {
   const rows = document.querySelectorAll("#tblRepEsc tbody tr");
   rows.forEach((r) => {
     if (
-      r.style.display !== "none" &&
+      r.getAttribute("data-filter-match") !== "false" &&
       !r.querySelector("td[colspan]") &&
       r.getAttribute("data-si-reference") !== "true"
     ) {
@@ -5571,8 +5951,9 @@ function filterRepEscRows() {
           (detailStatus === ESC_FILTER_ALL || status === detailStatus));
       if (!statusMatches) show = false;
     }
-    r.style.display = show ? "" : "none";
+    r.setAttribute("data-filter-match", String(show));
   });
+  paginateFilteredDomTable("tblRepEsc", "pagination-tblRepEsc");
 }
 
 function filterRepInvRows() {
@@ -5603,8 +5984,9 @@ function filterRepInvRows() {
       if (!lastResolved.some((v) => lastStatusCell === v || lastStatusCell.includes(v)))
         show = false;
     }
-    r.style.display = show ? "" : "none";
+    r.setAttribute("data-filter-match", String(show));
   });
+  paginateFilteredDomTable("tblRepInv", "pagination-tblRepInv");
 }
 
 function renderRepInvoices(data) {
@@ -5675,6 +6057,7 @@ function renderRepInvoices(data) {
   });
 
   checkEmptyTable(tbody, 15);
+  filterRepInvRows();
   updateRepInvFooter();
 }
 
@@ -5694,7 +6077,7 @@ function updateRepInvFooter() {
 
   const rows = document.querySelectorAll("#tblRepInv tbody tr");
   rows.forEach((r) => {
-    if (r.style.display !== "none" && !r.querySelector("td[colspan]")) {
+    if (r.getAttribute("data-filter-match") !== "false" && !r.querySelector("td[colspan]")) {
       count++;
       const gross =
         parseFloat(r.children[10]?.textContent.replace(/,/g, "")) || 0;
@@ -6149,6 +6532,13 @@ function sortTable(tableId, colIndex) {
 
   tbody.innerHTML = "";
   rows.forEach((r) => tbody.appendChild(r));
+  if (TEN_ROW_PAGINATED_TABLES.has(tableId)) {
+    const paginationContainerId = `pagination-${tableId}`;
+    paginateFilteredDomTable(tableId, paginationContainerId, false);
+    if (tableId === "tblRepEsc") updateRepEscFooter();
+    if (tableId === "tblRepInv") updateRepInvFooter();
+    if (tableId === "tblRepExec") updateRepExecFooter();
+  }
 }
 
 function openOwnerModal(id = null) {
@@ -6577,6 +6967,7 @@ function openContractModal() {
   document.getElementById("contractProjectId").value = "";
   document.getElementById("contractName").value = "";
   document.getElementById("contractAmount").value = "";
+  document.getElementById("contractPaymentValue").value = "";
   document.getElementById("contractModifiedAmount").value = "";
   document.getElementById("contractVoAmount").value = "0";
   document.getElementById("contractClaimsAmount").value = "0";
@@ -6603,6 +6994,8 @@ function editContract(id) {
   document.getElementById("contractProjectId").value = c.projectId;
   document.getElementById("contractName").value = c.name || "";
   document.getElementById("contractAmount").value = c.amount || 0;
+  document.getElementById("contractPaymentValue").value =
+    c.paymentValue ?? "";
   document.getElementById("contractModifiedAmount").value =
     c.modifiedAmount ?? 0;
   document.getElementById("contractVoAmount").value = c.voAmount ?? 0;
@@ -6649,6 +7042,12 @@ async function saveContract() {
     alert("قيمة العقد المعدل يجب أن تكون رقماً صالحاً (أكبر من أو يساوي صفر).");
     return;
   }
+  const paymentValueRaw = document.getElementById("contractPaymentValue").value.trim();
+  const paymentValue = paymentValueRaw === "" ? null : Number(paymentValueRaw);
+  if (paymentValue !== null && (!Number.isFinite(paymentValue) || paymentValue < 0)) {
+    alert("قيمة الدفعة يجب أن تكون رقماً صالحاً أكبر من أو يساوي صفر.");
+    return;
+  }
   const paymentTerms =
     parseInt(document.getElementById("contractPaymentTerms").value) || 45;
   const signDate = document.getElementById("contractSignDate").value;
@@ -6675,6 +7074,7 @@ async function saveContract() {
     projectId,
     name,
     amount,
+    paymentValue,
     modifiedAmount,
     voAmount: id
       ? parseFloat(document.getElementById("contractVoAmount").value) || 0
@@ -7965,6 +8365,34 @@ function getSocialInsuranceDeductionAmount(inv) {
   }, 0);
 }
 
+function isAdvancePaymentDeduction(deduction) {
+  if (!deduction) return false;
+  const library = getDeductionLibrary();
+  const libraryItem = library.find((item) => item.id === deduction.libraryId);
+  const label = normalizeArabicText(
+    libraryItem?.name || deduction.description || "",
+  );
+  return label.includes("دفعه مقدمه") || label.includes("دفعات مقدمه");
+}
+
+function getAdvancePaymentDeducted(contractId, invoices = state.invoices) {
+  return (invoices || []).reduce((total, invoice) => {
+    if (String(invoice.contractId || "") !== String(contractId || ""))
+      return total;
+    return (
+      total +
+      (invoice.deductions || []).reduce(
+        (sum, deduction) =>
+          sum +
+          (isAdvancePaymentDeduction(deduction)
+            ? Math.max(0, Number(deduction.amount) || 0)
+            : 0),
+        0,
+      )
+    );
+  }, 0);
+}
+
 function getSocialInsuranceContractRecord(contractId) {
   ensureSocialInsuranceState();
   if (!state.socialInsurance.contracts[contractId]) {
@@ -8605,6 +9033,7 @@ function initImportExportModule() {
           "name",
           "amount",
           "modifiedAmount",
+          "paymentValue",
           "voAmount",
           "claimsAmount",
           "vatAmount",
@@ -8786,6 +9215,8 @@ function initImportExportModule() {
           contracts.forEach((c) => {
             ensureImportId(c);
             c.signDate = toDateOnly(c.signDate);
+            const paymentValue = c.paymentValue === "" || c.paymentValue == null ? null : Number(c.paymentValue);
+            c.paymentValue = Number.isFinite(paymentValue) && paymentValue >= 0 ? paymentValue : null;
             // قيمة العقد المعدل = حصر البنود (يدوي من Excel). القيم الديناميكية تبدأ 0 إن لم تُمرَّر.
             const mod = parseFloat(c.modifiedAmount);
             c.modifiedAmount = Number.isFinite(mod) && mod >= 0 ? mod : 0;
@@ -9042,6 +9473,10 @@ function initImportExportModule() {
           });
           contracts.forEach((c) => {
             c.signDate = toDateOnly(c.signDate);
+            if (c.paymentValue !== undefined && c.paymentValue !== "") {
+              const paymentValue = Number(c.paymentValue);
+              c.paymentValue = Number.isFinite(paymentValue) && paymentValue >= 0 ? paymentValue : null;
+            }
             // قيمة العقد المعدل = حصر البنود (يدوي من Excel). القيم الديناميكية تبدأ 0 إن لم تُمرَّر.
             const mod = parseFloat(c.modifiedAmount);
             c.modifiedAmount = Number.isFinite(mod) && mod >= 0 ? mod : 0;

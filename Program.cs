@@ -102,6 +102,30 @@ try
                 ALTER TABLE dbo.Contracts ADD ClaimsAmount DECIMAL(18,2) NOT NULL CONSTRAINT DF_Contracts_ClaimsAmount DEFAULT(0);
             IF COL_LENGTH('dbo.Contracts', 'VatAmount') IS NULL
                 ALTER TABLE dbo.Contracts ADD VatAmount DECIMAL(18,2) NOT NULL CONSTRAINT DF_Contracts_VatAmount DEFAULT(0);
+            IF COL_LENGTH('dbo.Contracts', 'PaymentValue') IS NULL
+                ALTER TABLE dbo.Contracts ADD PaymentValue DECIMAL(18,2) NULL;
+            """);
+
+        // Keep optional contract payment values and their audit log available on existing databases.
+        await db.Database.ExecuteSqlRawAsync("""
+            IF OBJECT_ID('dbo.ContractPaymentValueLogs', 'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.ContractPaymentValueLogs (
+                    Id NVARCHAR(64) NOT NULL PRIMARY KEY,
+                    ContractId NVARCHAR(64) NOT NULL,
+                    ProjectId NVARCHAR(64) NOT NULL,
+                    OldValue DECIMAL(18,2) NULL,
+                    NewValue DECIMAL(18,2) NULL,
+                    ChangedByUserId NVARCHAR(64) NULL,
+                    ChangedByUsername NVARCHAR(200) NULL,
+                    ChangedAt DATETIME2 NOT NULL,
+                    Note NVARCHAR(500) NULL,
+                    CONSTRAINT FK_ContractPaymentValueLogs_Contracts FOREIGN KEY (ContractId) REFERENCES dbo.Contracts(Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IX_ContractPaymentValueLogs_ContractId ON dbo.ContractPaymentValueLogs(ContractId);
+                CREATE INDEX IX_ContractPaymentValueLogs_ProjectId ON dbo.ContractPaymentValueLogs(ProjectId);
+                CREATE INDEX IX_ContractPaymentValueLogs_ChangedAt ON dbo.ContractPaymentValueLogs(ChangedAt);
+            END
             """);
 
         // Ensure Cost Control tables exist (backward compatible).

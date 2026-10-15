@@ -97,7 +97,10 @@ export const erpApi = {
     ...collection('projects'),
     getSectorManagers: () => request('/projects/sector-managers', { method: 'GET' })
   },
-  contracts: collection('contracts'),
+  contracts: {
+    ...collection('contracts'),
+    getPaymentValueLogs: (id) => request(`/contracts/${encodeURIComponent(id)}/payment-value-logs`, { method: 'GET' })
+  },
   invoices: {
     list: (params) => request(`/invoices${toQuery(params)}`, { method: 'GET' }),
     listPaged: (params = {}) => request(`/invoices${toQuery({ page: 1, pageSize: 25, ...params })}`, { method: 'GET' }),
