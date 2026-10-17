@@ -128,6 +128,24 @@ try
             END
             """);
 
+        // Existing contracts may already have payment values from before auditing was added.
+        // Record their current value once as a baseline so the audit page is not empty;
+        // this deliberately does not claim to reconstruct an earlier change history.
+        await db.Database.ExecuteSqlRawAsync("""
+            INSERT INTO dbo.ContractPaymentValueLogs
+                (Id, ContractId, ProjectId, OldValue, NewValue, ChangedByUserId, ChangedByUsername, ChangedAt, Note)
+            SELECT
+                CONVERT(NVARCHAR(36), NEWID()), c.Id, c.ProjectId, NULL, c.PaymentValue,
+                NULL, NULL, SYSUTCDATETIME(), N'تسجيل تأسيسي للقيمة الحالية'
+            FROM dbo.Contracts c
+            WHERE c.PaymentValue IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM dbo.ContractPaymentValueLogs l
+                  WHERE l.ContractId = c.Id
+              );
+            """);
+
         // Ensure Cost Control tables exist (backward compatible).
         await db.Database.ExecuteSqlRawAsync("""
             IF OBJECT_ID('dbo.CostControls', 'U') IS NULL

@@ -5,6 +5,65 @@ import { createMultiFilter } from "./multi-filter.js?v=1";
 // flatpickr loaded globally via CDN
 const flatpickr = window.flatpickr;
 
+// Mobile browsers render native select menus outside the page viewport for long
+// option labels. Keep the native control as the source of truth, but use a
+// viewport-bound picker on narrow screens.
+let mobileSelectOverlay;
+let mobileSelectSearch;
+function closeMobileSelectPicker() {
+  mobileSelectOverlay?.remove();
+  mobileSelectOverlay = null;
+  mobileSelectSearch = null;
+  document.body.classList.remove("mobile-select-open");
+}
+function openMobileSelectPicker(select) {
+  closeMobileSelectPicker();
+  const overlay = document.createElement("div");
+  overlay.className = "mobile-select-overlay";
+  overlay.innerHTML = `<div class="mobile-select-sheet" role="dialog" aria-modal="true" aria-label="اختيار قيمة"><div class="mobile-select-head"><strong></strong><button type="button" aria-label="إغلاق">×</button></div><input class="mobile-select-search" type="search" placeholder="ابحث في الخيارات" autocomplete="off"><div class="mobile-select-options" role="listbox"></div></div>`;
+  const sheet = overlay.querySelector(".mobile-select-sheet");
+  const linkedLabel = select.id ? document.querySelector(`label[for="${CSS.escape(select.id)}"]`) : null;
+  sheet.querySelector("strong").textContent = linkedLabel?.textContent?.trim() || select.getAttribute("aria-label") || "اختيار قيمة";
+  const list = overlay.querySelector(".mobile-select-options");
+  const search = overlay.querySelector(".mobile-select-search");
+  mobileSelectOverlay = overlay;
+  mobileSelectSearch = search;
+  const render = () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    list.replaceChildren();
+    [...select.options].filter((option) => !option.disabled && option.text.trim().toLocaleLowerCase().includes(query)).forEach((option) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "mobile-select-option" + (option.value === select.value ? " is-selected" : "");
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", option.value === select.value ? "true" : "false");
+      button.textContent = option.text.trim();
+      button.addEventListener("click", () => {
+        select.value = option.value;
+        select.dispatchEvent(new Event("input", { bubbles: true }));
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        closeMobileSelectPicker();
+        select.focus({ preventScroll: true });
+      });
+      list.append(button);
+    });
+    if (!list.childElementCount) list.innerHTML = '<div class="mobile-select-empty">لا توجد نتائج</div>';
+  };
+  render();
+  search.addEventListener("input", render);
+  overlay.addEventListener("click", (event) => { if (event.target === overlay || event.target.closest(".mobile-select-head button")) closeMobileSelectPicker(); });
+  document.body.append(overlay);
+  document.body.classList.add("mobile-select-open");
+  search.focus({ preventScroll: true });
+}
+document.addEventListener("pointerdown", (event) => {
+  const select = event.target.closest("select");
+  if (!select || window.matchMedia("(min-width: 768px)").matches || select.multiple || select.disabled || select.closest(".mobile-select-overlay")) return;
+  event.preventDefault();
+  openMobileSelectPicker(select);
+}, true);
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && mobileSelectOverlay) closeMobileSelectPicker(); });
+
 const ICON_BTN_EDIT =
   '<svg class="icon-action" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
 const ICON_BTN_DELETE =
@@ -2959,9 +3018,8 @@ function initCentralizedEventListeners() {
     if (action === "printInvoice") printInvoice(id);
   });
 
-  document
-    .getElementById("tblEscalations")
-    ?.addEventListener("change", async (e) => {
+  document.addEventListener("change", async (e) => {
+      if (!e.target.closest("#tblEscalations, #tblRepEsc")) return;
       if (e.target.classList.contains("esc-status-ctrl")) {
         const key = e.target.getAttribute("data-key");
         if (key) {
@@ -4662,21 +4720,58 @@ function renderPaymentValueCharts(rows) {
 }
 
 async function loadPaymentValueAuditTransactions(contractRows, forceRefresh = false) {
-  const uniqueRows = [...new Map((contractRows || []).map((row) => [String(row.contract.id), row])).values()];
+  const rowsSource = (contractRows && contractRows.length)
+    ? contractRows
+    : (window._paymentValueAuditContractRows && window._paymentValueAuditContractRows.length)
+      ? window._paymentValueAuditContractRows
+      : (window.state?.contracts || []).map((contract) => {
+          const project = (window.state?.projects || []).find((p) => p.id === contract.projectId);
+          return { contract, projectName: project?.name || "-" };
+        });
+
+  const uniqueRows = [...new Map(
+    (rowsSource || [])
+      .filter((row) => row && row.contract && row.contract.id && String(row.contract.id).trim() !== "")
+      .map((row) => [String(row.contract.id), row])
+  ).values()];
+
   window._paymentValueAuditCache ||= new Map();
   window._paymentValueAuditInFlight ||= new Map();
   window._paymentValueAuditErrors ||= new Map();
-  if (forceRefresh) uniqueRows.forEach((row) => window._paymentValueAuditCache.delete(String(row.contract.id)));
+
+  if (forceRefresh) {
+    window._paymentValueAuditErrors.clear();
+    uniqueRows.forEach((row) => {
+      window._paymentValueAuditCache.delete(String(row.contract.id));
+    });
+  }
+
+  const tbody = document.querySelector("#tblPaymentValueHistory tbody");
+  const hasCachedLogs = uniqueRows.some((row) => window._paymentValueAuditCache.has(String(row.contract.id)));
+  if (!hasCachedLogs && uniqueRows.length && tbody) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">جاري تحميل سجل التدقيق…</div></div></td></tr>';
+  }
+
+  // فرز العقود بحيث تُطلب العقود التي لها قيمة دفعة أولاً
+  const prioritizedRows = [...uniqueRows].sort((a, b) => {
+    const aVal = a.contract.paymentValue != null && a.contract.paymentValue !== "";
+    const bVal = b.contract.paymentValue != null && b.contract.paymentValue !== "";
+    return (bVal ? 1 : 0) - (aVal ? 1 : 0);
+  });
 
   const requestFor = (row) => {
     const id = String(row.contract.id);
-    if (window._paymentValueAuditCache.has(id)) return Promise.resolve(window._paymentValueAuditCache.get(id));
-    if (window._paymentValueAuditInFlight.has(id)) return window._paymentValueAuditInFlight.get(id);
+    if (window._paymentValueAuditCache.has(id)) {
+      return Promise.resolve(window._paymentValueAuditCache.get(id));
+    }
+    if (window._paymentValueAuditInFlight.has(id)) {
+      return window._paymentValueAuditInFlight.get(id);
+    }
     const request = erpApi.contracts.getPaymentValueLogs(id)
       .then((logs) => {
         const normalized = (Array.isArray(logs) ? logs : []).map((log) => ({
-          projectName: row.projectName,
-          contractName: row.contract.name || "-",
+          projectName: row.projectName || "-",
+          contractName: row.contract?.name || "-",
           ...log,
         }));
         window._paymentValueAuditCache.set(id, normalized);
@@ -4688,49 +4783,104 @@ async function loadPaymentValueAuditTransactions(contractRows, forceRefresh = fa
         window._paymentValueAuditErrors.set(id, error);
         return [];
       })
-      .finally(() => window._paymentValueAuditInFlight.delete(id));
+      .finally(() => {
+        window._paymentValueAuditInFlight.delete(id);
+      });
+
     window._paymentValueAuditInFlight.set(id, request);
     return request;
   };
 
-  const cachedTransactions = () => uniqueRows.flatMap((row) =>
-    window._paymentValueAuditCache.get(String(row.contract.id)) || [],
-  );
-  const tbody = document.querySelector("#tblPaymentValueHistory tbody");
-  const hasCachedLogs = cachedTransactions().length > 0;
-  if (!hasCachedLogs && uniqueRows.length && tbody) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">جاري تحميل سجل التدقيق…</div></div></td></tr>';
+  const renderCurrent = () => {
+    const currentRows = window._paymentValueAuditContractRows || uniqueRows;
+    const currentIds = new Set(currentRows.map((row) => String(row.contract.id)));
+    const currentTransactions = currentRows.flatMap((row) =>
+      window._paymentValueAuditCache.get(String(row.contract.id)) || [],
+    );
+    window._paymentValueAuditRows = currentTransactions.sort((a, b) =>
+      (parsePaymentAuditDate(b.changedAt || b.ChangedAt)?.getTime() || 0) -
+        (parsePaymentAuditDate(a.changedAt || a.ChangedAt)?.getTime() || 0),
+    );
+    renderPaymentValueHistory(window._paymentValueAuditRows, currentRows, currentIds);
+  };
+
+  // اعرض البيانات المتوفرة في الكاش فوراً إن وُجدت
+  renderCurrent();
+
+  // جلب البيانات على دفعات متزامنة محدودة (6 في المرة) لتفادي استنزاف اتصالات المتصفح
+  const BATCH_SIZE = 6;
+  for (let offset = 0; offset < prioritizedRows.length; offset += BATCH_SIZE) {
+    await Promise.all(prioritizedRows.slice(offset, offset + BATCH_SIZE).map(requestFor));
+    renderCurrent();
   }
-  for (let offset = 0; offset < uniqueRows.length; offset += 8) {
-    await Promise.all(uniqueRows.slice(offset, offset + 8).map(requestFor));
-  }
-  const currentRows = window._paymentValueAuditContractRows || uniqueRows;
-  const currentIds = new Set(currentRows.map((row) => String(row.contract.id)));
-  const currentTransactions = currentRows.flatMap((row) =>
-    window._paymentValueAuditCache.get(String(row.contract.id)) || [],
-  );
-  window._paymentValueAuditRows = currentTransactions.sort((a, b) =>
-    String(b.changedAt || b.ChangedAt || "").localeCompare(String(a.changedAt || a.ChangedAt || "")),
-  );
-  renderPaymentValueHistory(window._paymentValueAuditRows, currentRows, currentIds);
+}
+window.loadPaymentValueAuditTransactions = loadPaymentValueAuditTransactions;
+
+function parsePaymentAuditDate(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  // SQL DATETIME2 has no timezone; audit timestamps are written in UTC.
+  // Mark timezone-less API values as UTC before converting to the user's locale.
+  const utcValue = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw}Z`;
+  const parsed = new Date(utcValue);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function renderPaymentValueHistory(transactions, contractRows, contractIds = new Set(contractRows.map((row) => String(row.contract.id)))) {
+function renderPaymentValueHistory(transactions, contractRows, contractIds = null) {
   const tbody = document.querySelector("#tblPaymentValueHistory tbody");
   if (!tbody) return;
+
+  const validRows = Array.isArray(contractRows) ? contractRows : [];
+  const validIds = contractIds instanceof Set
+    ? contractIds
+    : new Set(validRows.map((row) => String(row.contract?.id || "")));
+
   const query = (window._searchTerms?.tblPaymentValues || "").trim().toLowerCase();
-  const rows = (transactions || []).filter((log) => {
+  const allLogs = Array.isArray(transactions) ? transactions : [];
+
+  const rows = allLogs.filter((log) => {
     const contractId = String(log.contractId || log.ContractId || "");
+    if (validIds.size > 0 && !validIds.has(contractId)) {
+      return false;
+    }
+    if (!query) return true;
     const searchable = `${log.projectName || ""} ${log.contractName || ""} ${contractId} ${log.note || log.Note || ""} ${log.changedByUsername || log.ChangedByUsername || ""} ${log.oldValue ?? log.OldValue ?? ""} ${log.newValue ?? log.NewValue ?? ""}`.toLowerCase();
-    return contractIds.has(contractId) && searchable.includes(query);
+    return searchable.includes(query);
   });
-  if (!rows.length && [...contractIds].some((id) => window._paymentValueAuditErrors?.has(id))) {
-    const tbody = document.querySelector("#tblPaymentValueHistory tbody");
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">تعذر تحميل سجل التدقيق. أعيدي فتح الصفحة للمحاولة مرة أخرى.</div></div></td></tr>';
+
+  const isLoading = window._paymentValueAuditInFlight && window._paymentValueAuditInFlight.size > 0;
+  const errors = window._paymentValueAuditErrors || new Map();
+  const checkedContracts = validIds.size > 0 ? [...validIds] : [];
+  const hasErrors = checkedContracts.some((id) => errors.has(id));
+
+  if (!rows.length) {
+    if (isLoading && allLogs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">جاري تحميل سجل التدقيق…</div></div></td></tr>';
+      const pagination = document.getElementById("pagination-tblPaymentValueHistory");
+      if (pagination) pagination.innerHTML = "";
+      return;
+    }
+
+    if (hasErrors) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">تعذر تحميل سجل التدقيق. أعيدي فتح الصفحة للمحاولة مرة أخرى.</div><div class="empty-state-sub" style="margin-top:0.5rem;"><button type="button" class="btn btn-sm btn-outline-primary" onclick="window.loadPaymentValueAuditTransactions?.(window._paymentValueAuditContractRows || [], true)">إعادة المحاولة</button></div></div></td></tr>';
+      const pagination = document.getElementById("pagination-tblPaymentValueHistory");
+      if (pagination) pagination.innerHTML = "";
+      return;
+    }
+
+    if (query) {
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">لا توجد معاملات مطابقة للبحث</div><div class="empty-state-sub">جربي البحث بكلمات أخرى</div></div></td></tr>';
+      const pagination = document.getElementById("pagination-tblPaymentValueHistory");
+      if (pagination) pagination.innerHTML = "";
+      return;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">لا توجد معاملات مسجلة في سجل التدقيق</div><div class="empty-state-sub">تظهر هنا التغييرات على قيمة الدفعة لكل عقد فور إنشائها أو تعديلها</div></div></td></tr>';
     const pagination = document.getElementById("pagination-tblPaymentValueHistory");
     if (pagination) pagination.innerHTML = "";
     return;
   }
+
   renderPaginatedTable(
     "tblPaymentValueHistory",
     rows,
@@ -4740,12 +4890,14 @@ function renderPaymentValueHistory(transactions, contractRows, contractIds = new
     (pageRows) => {
       pageRows.forEach((log) => {
         const changedAt = log.changedAt || log.ChangedAt || "";
-        const parsedDate = changedAt ? new Date(changedAt) : null;
-        const changedAtDisplay = parsedDate && !Number.isNaN(parsedDate.getTime())
+        const parsedDate = parsePaymentAuditDate(changedAt);
+        const changedAtDisplay = parsedDate
           ? parsedDate.toLocaleString("ar-EG")
           : "—";
         const note = log.note || log.Note || "تعديل";
-        const isCreate = normalizeArabicText(note).includes("انشاء");
+        const isCreate = typeof normalizeArabicText === "function"
+          ? normalizeArabicText(note).includes("انشاء")
+          : String(note).includes("إنشاء") || String(note).includes("انشاء");
         const oldValue = log.oldValue ?? log.OldValue;
         const newValue = log.newValue ?? log.NewValue;
         const tr = document.createElement("tr");
@@ -5797,100 +5949,92 @@ function renderRepEscalations(data) {
   data.invoices.forEach((inv) => {
     if (inv.deductions && Array.isArray(inv.deductions)) {
       inv.deductions.forEach((d, idx) => {
-        {
-          const amt = parseFloat(d.amount) || parseFloat(d.val) || 0;
-          const escKey = d.id || `${inv.id}_${idx}`;
-          const isInsuranceEscalation = isSocialInsuranceDeduction(d);
-          const insuranceView = isInsuranceEscalation
-            ? getSocialInsuranceEscalationView(inv)
-            : null;
-          const resp = state.escalationsResponses[escKey] || {};
-          const status = isInsuranceEscalation
-            ? insuranceView.status
-            : normalizeEscalationStatus(resp.responseStatus);
-          const respDate = isInsuranceEscalation
-            ? insuranceView.payment.paymentDate || "-"
-            : resp.responseDate || "-";
-
-          // إظهار كل تعليات التأمينات (بما فيها المسددة) عشان الفلتر يشتغل
-          // Map social insurance status for report display
-          let reportStatus = status;
-          if (isInsuranceEscalation) {
-            if (insuranceView.status === "غير مسدد")
-              reportStatus = ESC_STATUS_PENDING;
-            else if (insuranceView.status === "مسدد جزئياً")
-              reportStatus = ESC_STATUS_PARTIAL;
-          }
-
-          let returnedAmt = 0;
-          if (isInsuranceEscalation) {
-            returnedAmt = insuranceView.paid;
-          } else if (status === ESC_STATUS_DONE)
-            returnedAmt = parseFloat(resp.returnedAmount) || amt;
-          else if (status === ESC_STATUS_PARTIAL)
-            returnedAmt = parseFloat(resp.returnedAmount) || amt * 0.5;
-
-          const remainingAmt = isInsuranceEscalation
-            ? insuranceView.outstanding
-            : Math.max(0, amt - returnedAmt);
-
-          const contract =
-            state.contracts.find((c) => c.id === inv.contractId) || {};
-          const project =
-            state.projects.find((p) => p.id === contract.projectId) || {};
-          const owner =
-            state.owners.find((o) => o.id === project.ownerId) || {};
-
-          const tr = document.createElement("tr");
-          tr.setAttribute("data-key", escKey);
-          const reportFilterStatus = isInsuranceEscalation
-            ? insuranceView.status === "غير مسدد"
-              ? ESC_FILTER_UNPAID
-              : ESC_FILTER_REPLIED
-            : status === ESC_STATUS_PENDING
-              ? ESC_FILTER_NOT_REPLIED
-              : ESC_FILTER_REPLIED;
-          tr.setAttribute("data-filter-status", reportFilterStatus);
-          // Unpaid SI escalations are counted like regular ones (no data-si-reference)
-          tr.innerHTML = isInsuranceEscalation
-            ? `
-                        <td><strong>${inv.number}</strong></td>
-                        <td>${owner.name || "-"}</td>
-                        <td>${project.name || "-"}</td>
-                        <td>${contract.name || "-"}</td>
-                        <td>${fmtDisplayDate(inv.date)}</td>
-                        <td>
-                            <strong>تعلية تأمينات اجتماعية</strong>
-                            <div style="font-size:.78rem;color:var(--gray);margin-top:.2rem;">${d.description || "تعلية تأمينات اجتماعية"}</div>
-                            <div style="font-size:.75rem;color:var(--primary);margin-top:.2rem;">تعلية تأمينات اجتماعية — تتم متابعتها وسدادها من شاشة التأمينات الاجتماعية</div>
-                        </td>
-                        <td>${fmtNum(insuranceView.amount)}</td>
-                        <td>${socialInsuranceStatusBadge(insuranceView.status)}<div style="font-size:.72rem;color:var(--gray);margin-top:.2rem;">مرجع السداد: ${insuranceView.payment.reference || "-"}</div></td>
-                        <td>${fmtDisplayDate(respDate)}</td>
-                        <td>${fmtNum(insuranceView.paid)}</td>
-                        <td>${fmtNum(insuranceView.outstanding)}</td>
-                    `
-            : `
-                        <td><strong>${inv.number}</strong></td>
-                        <td>${owner.name || "-"}</td>
-                        <td>${project.name || "-"}</td>
-                        <td>${contract.name || "-"}</td>
-                        <td>${fmtDisplayDate(inv.date)}</td>
-                        <td>${d.description || "تعلية"}</td>
-                        <td>${fmtNum(amt)}</td>
-                        <td>${status}</td>
-                        <td>${fmtDisplayDate(respDate)}</td>
-                        <td>${fmtNum(returnedAmt)}</td>
-                        <td>${fmtNum(remainingAmt)}</td>
-                    `;
-          if (isInsuranceEscalation) tr.style.background = "var(--light)";
-          tbody.appendChild(tr);
+        const isReplyable = Boolean(d.isRefundable);
+        const amount = parseFloat(d.amount) || parseFloat(d.val) || 0;
+        const escKey = d.id || `${inv.id}_${idx}`;
+        const isInsuranceEscalation = isSocialInsuranceDeduction(d);
+        const insuranceView = isInsuranceEscalation ? getSocialInsuranceEscalationView(inv) : null;
+        const resp = state.escalationsResponses[escKey] || {};
+        const status = isInsuranceEscalation
+          ? insuranceView.status
+          : normalizeEscalationStatus(resp.responseStatus);
+        const responseDate = isInsuranceEscalation
+          ? insuranceView.payment.paymentDate || ""
+          : resp.responseDate || "";
+        const returned = isInsuranceEscalation
+          ? insuranceView.paid
+          : Math.min(amount, Math.max(0, parseFloat(resp.returnedAmount) || 0));
+        const remaining = isInsuranceEscalation
+          ? insuranceView.outstanding
+          : Math.max(0, amount - returned);
+        let mappedStatus = status;
+        if (isInsuranceEscalation) {
+          if (status === "مسدد") mappedStatus = ESC_STATUS_DONE;
+          else if (status === "غير مسدد") mappedStatus = ESC_STATUS_PENDING;
+          else if (status === "مسدد جزئياً") mappedStatus = ESC_STATUS_PARTIAL;
         }
+        const days = computeEscalationDays(inv.date, mappedStatus, responseDate);
+        const paidStatus = returned >= amount && amount > 0;
+        const reportFilterStatus = !isReplyable
+          ? ESC_FILTER_NOT_REPLIED
+          : isInsuranceEscalation
+            ? status === "غير مسدد"
+              ? ESC_FILTER_UNPAID
+              : status === "مسدد جزئياً" ? "partial" : ESC_FILTER_REPLIED
+            : paidStatus
+              ? ESC_FILTER_REPLIED
+              : returned > 0 ? "partial" : ESC_FILTER_UNPAID;
+
+        const contract = state.contracts.find((c) => c.id === inv.contractId) || {};
+        const project = state.projects.find((p) => p.id === contract.projectId) || {};
+        const owner = state.owners.find((o) => o.id === project.ownerId) || {};
+        const tr = document.createElement("tr");
+        tr.setAttribute("data-key", escKey);
+        tr.setAttribute("data-amt", amount);
+        tr.setAttribute("data-status", mappedStatus);
+        tr.setAttribute("data-filter-status", reportFilterStatus);
+        tr.setAttribute("data-replyable", String(isReplyable));
+        tr.setAttribute("data-invoice-date", inv.date || "");
+        tr.setAttribute("data-ret-amt", returned);
+
+        const statusCell = !isReplyable
+          ? '<span class="badge badge-warning">غير قابلة للرد</span>'
+          : '<span class="badge badge-success">قابلة للرد</span>';
+        const detailCell = !isReplyable
+          ? "—"
+          : `${paidStatus ? "تم الرد كليًا" : returned > 0 ? "تم الرد جزئيًا" : "لم يتم الرد"}<div class="esc-subtext">المتبقي: ${fmtNum(remaining)}</div>`;
+        const descriptionCell = isInsuranceEscalation
+          ? `<strong>تعلية تأمينات اجتماعية</strong><div class="esc-subtext">${d.description || "تعلية تأمينات اجتماعية"}</div><div class="esc-subtext esc-hint">تُتابع وتُسدد من شاشة التأمينات الاجتماعية</div>`
+          : (d.description || "تعلية مستقطعة");
+        const canEditResponse = isReplyable && !isInsuranceEscalation;
+        const responseDateCell = canEditResponse
+          ? `<input type="date" class="form-control esc-date-ctrl" data-key="${escKey}" value="${toDateOnly(responseDate) || ""}" lang="en-US" dir="ltr" aria-label="تاريخ الرد">`
+          : isReplyable ? (fmtDisplayDate(responseDate) || "—") : "—";
+        const returnedCell = canEditResponse
+          ? `<input type="number" step="any" class="form-control esc-ret-ctrl" data-key="${escKey}" value="${returned}" min="0" max="${amount}" title="المبلغ المُردّ">`
+          : isReplyable ? fmtNum(returned) : "—";
+
+        tr.innerHTML = `
+          <td class="col-inv-no"><strong>${inv.number}</strong></td>
+          <td class="col-inv-date">${fmtDisplayDate(inv.date)}</td>
+          <td class="col-owner">${owner.name || "-"}</td>
+          <td class="col-project">${project.name || "-"}</td>
+          <td class="col-contract">${contract.name || "-"}</td>
+          <td class="col-desc">${descriptionCell}</td>
+          <td class="col-amount">${fmtNum(amount)}</td>
+          <td class="col-follow-up">${statusCell}</td>
+          <td class="col-status">${detailCell}</td>
+          <td class="col-resp-date">${responseDateCell}</td>
+          <td class="col-ret-amt">${returnedCell}</td>
+          <td class="col-days"><span class="days-value">${days}</span> <span class="days-unit">يوم</span></td>
+        `;
+        if (isInsuranceEscalation) tr.style.background = "var(--light)";
+        tbody.appendChild(tr);
       });
     }
   });
 
-  checkEmptyTable(tbody, 11);
+  checkEmptyTable(tbody, 12);
   filterRepEscRows();
   updateRepEscFooter();
 }
@@ -5908,11 +6052,13 @@ function updateRepEscFooter() {
       r.getAttribute("data-si-reference") !== "true"
     ) {
       count++;
-      sumTotal += parseFloat(r.children[6]?.textContent.replace(/,/g, "")) || 0;
-      sumReturned +=
-        parseFloat(r.children[9]?.textContent.replace(/,/g, "")) || 0;
-      sumRemaining +=
-        parseFloat(r.children[10]?.textContent.replace(/,/g, "")) || 0;
+      sumTotal += parseFloat(r.getAttribute("data-amt")) || 0;
+      sumReturned += parseFloat(r.getAttribute("data-ret-amt")) || 0;
+      sumRemaining += Math.max(
+        0,
+        (parseFloat(r.getAttribute("data-amt")) || 0) -
+          (parseFloat(r.getAttribute("data-ret-amt")) || 0),
+      );
     }
   });
 

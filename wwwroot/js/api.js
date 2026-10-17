@@ -99,7 +99,11 @@ export const erpApi = {
   },
   contracts: {
     ...collection('contracts'),
-    getPaymentValueLogs: (id) => request(`/contracts/${encodeURIComponent(id)}/payment-value-logs`, { method: 'GET' })
+    getPaymentValueLogs: (id) => {
+      const trimmedId = id != null ? String(id).trim() : '';
+      if (!trimmedId) return Promise.resolve([]);
+      return request(`/contracts/${encodeURIComponent(trimmedId)}/payment-value-logs`, { method: 'GET' });
+    }
   },
   invoices: {
     list: (params) => request(`/invoices${toQuery(params)}`, { method: 'GET' }),

@@ -3150,7 +3150,9 @@ input[data-fp-init]::-webkit-calendar-picker-indicator {
 /* Inputs in table cells */
 #tblEscalations .esc-status-ctrl,
 #tblEscalations .esc-date-ctrl,
-#tblEscalations .esc-ret-ctrl {
+#tblEscalations .esc-ret-ctrl,
+#tblRepEsc .esc-date-ctrl,
+#tblRepEsc .esc-ret-ctrl {
   height: 30px !important;
   min-height: 30px !important;
   padding: 0.15rem 0.45rem !important;
@@ -3175,7 +3177,9 @@ input[data-fp-init]::-webkit-calendar-picker-indicator {
 
 #tblEscalations .esc-status-ctrl:focus,
 #tblEscalations .esc-date-ctrl:focus,
-#tblEscalations .esc-ret-ctrl:focus {
+#tblEscalations .esc-ret-ctrl:focus,
+#tblRepEsc .esc-date-ctrl:focus,
+#tblRepEsc .esc-ret-ctrl:focus {
   border-color: #3b82f6 !important;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15) !important;
   outline: none;
@@ -5536,6 +5540,20 @@ html[dir="rtl"] #sidebar {
 #tblEscalations .col-ret-amt { width: 165px; min-width: 165px; }
 #tblEscalations .col-days { width: 100px; min-width: 100px; }
 
+/* Match the escalation report table to the main escalations table. */
+#tblRepEsc .col-inv-no { width: 130px; min-width: 130px; }
+#tblRepEsc .col-inv-date { width: 140px; min-width: 140px; }
+#tblRepEsc .col-owner { width: 155px; min-width: 155px; }
+#tblRepEsc .col-project { width: 160px; min-width: 160px; }
+#tblRepEsc .col-contract { width: 190px; min-width: 190px; }
+#tblRepEsc .col-desc { width: 235px; min-width: 235px; }
+#tblRepEsc .col-amount { width: 130px; min-width: 130px; }
+#tblRepEsc .col-follow-up { width: 135px; min-width: 135px; }
+#tblRepEsc .col-status { width: 190px; min-width: 190px; }
+#tblRepEsc .col-resp-date { width: 145px; min-width: 145px; }
+#tblRepEsc .col-ret-amt { width: 165px; min-width: 165px; }
+#tblRepEsc .col-days { width: 100px; min-width: 100px; text-align: center; white-space: nowrap; }
+
 #tblEscalations .esc-status-ctrl,
 #tblEscalations .esc-date-ctrl,
 #tblEscalations .esc-ret-ctrl {
@@ -5555,7 +5573,8 @@ html[dir="rtl"] #sidebar {
     border-color: #94a3b8 !important;
     outline: 2px solid rgba(148, 163, 184, 0.16);
 }
-#tblEscalations .esc-date-ctrl {
+#tblEscalations .esc-date-ctrl,
+#tblRepEsc .esc-date-ctrl {
     width: 122px !important;
     max-width: 122px !important;
     padding: 0.3rem 0.45rem !important;
@@ -5565,7 +5584,8 @@ html[dir="rtl"] #sidebar {
     color: #475569 !important;
     font-variant-numeric: tabular-nums;
 }
-#tblEscalations .esc-ret-ctrl {
+#tblEscalations .esc-ret-ctrl,
+#tblRepEsc .esc-ret-ctrl {
     width: 112px !important;
     max-width: 112px !important;
     text-align: left;
@@ -5666,7 +5686,8 @@ html[dir="rtl"] #sidebar {
     box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.025) !important;
 }
 
-#tblEscalations input.esc-date-ctrl::-webkit-calendar-picker-indicator {
+#tblEscalations input.esc-date-ctrl::-webkit-calendar-picker-indicator,
+#tblRepEsc input.esc-date-ctrl::-webkit-calendar-picker-indicator {
     display: block;
     width: 16px;
     height: 16px;
@@ -5675,7 +5696,8 @@ html[dir="rtl"] #sidebar {
     cursor: pointer;
 }
 
-#tblEscalations input.esc-ret-ctrl {
+#tblEscalations input.esc-ret-ctrl,
+#tblRepEsc input.esc-ret-ctrl {
     display: block;
     width: 118px !important;
     max-width: 118px !important;
@@ -5746,3 +5768,326 @@ html[dir="rtl"] #sidebar {
     #escalationsView .esc-total-footer .esc-foot-group { flex-wrap: wrap; gap: 0.55rem 1rem; }
     #escalationsView .esc-total-footer .esc-foot-sep { display: none; }
 }
+
+/* Shared dashboard-style treatment for data tables on the other pages. */
+body:not(.printing-report) .page-view:not(#dashboardView) .data-table-wrapper {
+    border: 1px solid #dbe3ec;
+    border-radius: 10px;
+    background: #fff;
+}
+
+body:not(.printing-report) .page-view:not(#dashboardView) table.data-table thead th {
+    background: #eaf4ff !important;
+    color: #17324d !important;
+    border: 1px solid #dbe3ec !important;
+    font-weight: 800 !important;
+    vertical-align: middle;
+}
+
+body:not(.printing-report) .page-view:not(#dashboardView) table.data-table tbody td {
+    border: 1px solid #dbe3ec;
+    vertical-align: middle;
+}
+
+body:not(.printing-report) .page-view:not(#dashboardView) table.data-table tbody tr:nth-child(even) td {
+    background-color: #f7faff;
+}
+
+body:not(.printing-report) .page-view:not(#dashboardView) table.data-table tbody tr:hover td {
+    background-color: #edf6ff !important;
+}
+
+body:not(.printing-report) .page-view:not(#dashboardView) table.data-table tfoot td,
+body:not(.printing-report) .page-view:not(#dashboardView) table.data-table tfoot th {
+    background: #f1f7fd;
+    border: 1px solid #dbe3ec;
+    border-top: 2px solid #9dceff;
+    font-weight: 800;
+}
+
+/* Keep the identifying first column visible while tables scroll horizontally. */
+.page-view table.data-table thead th:first-child,
+.page-view table.data-table tbody td:first-child,
+.page-view table.data-table tfoot th:first-child:not([colspan]),
+.page-view table.data-table tfoot td:first-child:not([colspan]),
+#dashboardView .mc-disbursement-table thead th:first-child,
+#dashboardView .mc-disbursement-table tbody td:first-child,
+#dashboardView .mc-disbursement-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-disbursement-table tfoot td:first-child:not([colspan]),
+#dashboardView .mc-project-table thead th:first-child,
+#dashboardView .mc-project-table tbody td:first-child,
+#dashboardView .mc-project-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-project-table tfoot td:first-child:not([colspan]),
+#dashboardView .mc-contract-register-table thead th:first-child,
+#dashboardView .mc-contract-register-table tbody td:first-child,
+#dashboardView .mc-contract-register-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-contract-register-table tfoot td:first-child:not([colspan]),
+#dashboardView .mc-attention-table thead th:first-child,
+#dashboardView .mc-attention-table tbody td:first-child,
+#dashboardView .mc-attention-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-attention-table tfoot td:first-child:not([colspan]) {
+    position: sticky;
+    inset-inline-start: 0;
+}
+
+.page-view table.data-table thead th:first-child,
+.page-view table.data-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-disbursement-table thead th:first-child,
+#dashboardView .mc-disbursement-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-project-table thead th:first-child,
+#dashboardView .mc-project-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-contract-register-table thead th:first-child,
+#dashboardView .mc-contract-register-table tfoot th:first-child:not([colspan]),
+#dashboardView .mc-attention-table thead th:first-child,
+#dashboardView .mc-attention-table tfoot th:first-child:not([colspan]) {
+    z-index: 5;
+}
+
+#dashboardView .mc-disbursement-table thead th:first-child,
+#dashboardView .mc-project-table thead th:first-child,
+#dashboardView .mc-contract-register-table thead th:first-child,
+#dashboardView .mc-attention-table thead th:first-child {
+    z-index: 6;
+}
+
+#dashboardView .mc-disbursement-table tbody td:first-child,
+#dashboardView .mc-disbursement-table tfoot td:first-child,
+#dashboardView .mc-project-table tbody td:first-child,
+#dashboardView .mc-project-table tfoot td:first-child,
+#dashboardView .mc-contract-register-table tbody td:first-child,
+#dashboardView .mc-contract-register-table tfoot td:first-child,
+#dashboardView .mc-attention-table tbody td:first-child,
+#dashboardView .mc-attention-table tfoot td:first-child {
+    z-index: 2;
+    background-color: #fff;
+}
+
+.page-view table.data-table tbody td:first-child {
+    z-index: 2;
+    background-color: #fff;
+}
+
+.page-view table.data-table tfoot td:first-child:not([colspan]),
+.page-view table.data-table tfoot th:first-child:not([colspan]) {
+    z-index: 4;
+}
+
+.page-view table.data-table tbody tr:nth-child(even) td:first-child,
+#dashboardView .mc-disbursement-table tbody tr:nth-child(even) td:first-child,
+#dashboardView .mc-project-table tbody tr:nth-child(even) td:first-child,
+#dashboardView .mc-contract-register-table tbody tr:nth-child(even) td:first-child,
+#dashboardView .mc-attention-table tbody tr:nth-child(even) td:first-child {
+    background-color: #f7faff;
+}
+
+.page-view table.data-table tbody tr:hover td:first-child,
+#dashboardView .mc-disbursement-table tbody tr:hover td:first-child,
+#dashboardView .mc-project-table tbody tr:hover td:first-child,
+#dashboardView .mc-contract-register-table tbody tr:hover td:first-child,
+#dashboardView .mc-attention-table tbody tr:hover td:first-child {
+    background-color: #edf6ff !important;
+}
+
+@media (max-width: 760px) {
+    .page-view table.data-table thead th:first-child,
+    .page-view table.data-table tbody td:first-child,
+    .page-view table.data-table tfoot th:first-child:not([colspan]),
+    .page-view table.data-table tfoot td:first-child:not([colspan]),
+    #dashboardView .mc-disbursement-table thead th:first-child,
+    #dashboardView .mc-disbursement-table tbody td:first-child,
+    #dashboardView .mc-disbursement-table tfoot th:first-child:not([colspan]),
+    #dashboardView .mc-disbursement-table tfoot td:first-child:not([colspan]),
+    #dashboardView .mc-project-table thead th:first-child,
+    #dashboardView .mc-project-table tbody td:first-child,
+    #dashboardView .mc-project-table tfoot th:first-child:not([colspan]),
+    #dashboardView .mc-project-table tfoot td:first-child:not([colspan]),
+    #dashboardView .mc-contract-register-table thead th:first-child,
+    #dashboardView .mc-contract-register-table tbody td:first-child,
+    #dashboardView .mc-contract-register-table tfoot th:first-child:not([colspan]),
+    #dashboardView .mc-contract-register-table tfoot td:first-child:not([colspan]),
+    #dashboardView .mc-attention-table thead th:first-child,
+    #dashboardView .mc-attention-table tbody td:first-child,
+    #dashboardView .mc-attention-table tfoot th:first-child:not([colspan]),
+    #dashboardView .mc-attention-table tfoot td:first-child:not([colspan]) {
+        width: 112px !important;
+        min-width: 112px !important;
+        max-width: 112px !important;
+        white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        line-height: 1.3;
+    }
+}
+
+@media (max-width: 767.98px) {
+    /* Keep project/contract selectors and their native option lists within the viewport. */
+    #costControlView .card-body,
+    #execPositionView .table-container > div:first-child {
+        min-width: 0;
+    }
+
+    #costControlView select,
+    #execPositionView select,
+    #contractsView select,
+    #modalContract select,
+    #modalInvoice select {
+        width: 100%;
+        min-width: 0 !important;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    #costControlView option,
+    #execPositionView option,
+    #contractsView option,
+    #modalContract option,
+    #modalInvoice option,
+    #socialInsuranceView option {
+        max-width: calc(100vw - 32px);
+        white-space: normal;
+    }
+    #global-filters-bar option {
+        max-width: calc(100vw - 32px);
+        white-space: normal;
+    }
+
+    #costControlView .form-group,
+    #execPositionView .form-group {
+        flex: 1 1 100% !important;
+        min-width: 0 !important;
+        width: 100%;
+    }
+
+    #modalContract .form-grid,
+    #modalInvoice .form-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    #socialInsuranceView .table-toolbar {
+        align-items: stretch;
+    }
+    #socialInsuranceView .table-toolbar:has(#siFilterFileStatus) > div:last-child {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        min-width: 0;
+    }
+    #socialInsuranceView #siFilterFileStatus,
+    #socialInsuranceView #siFilterPaymentStatus {
+        width: 100%;
+        min-width: 0 !important;
+        max-width: 100%;
+    }
+
+    #escalationsView,
+    #escalationsView .table-container,
+    #escalationsView .data-table-wrapper {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+    #escalationsView .table-toolbar-left {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    #escalationsView #searchEscalations,
+    #escalationsView .esc-sort-control,
+    #escalationsView #escInvoiceDateSort,
+    #escalationsView #escPageStatusFilter,
+    #escalationsView #escPageStatusDetailFilter {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+    }
+    #escalationsView #escToolbarFilters,
+    #escalationsView #escToolbarFilters > div {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    #escalationsView #escToolbarFilters > div:last-child > div {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    #escalationsView .esc-total-footer .esc-foot-group {
+        justify-content: flex-start;
+    }
+    #escalationsView .esc-total-footer .esc-foot-item {
+        white-space: normal;
+    }
+
+    .users-table-wrap {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+    .users-table-wrap .table-responsive {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+    #tblUsers {
+        width: max-content;
+        min-width: 760px;
+    }
+
+    #projectSectorManagerDropdown {
+        right: 0;
+        left: 0;
+        width: 100%;
+        max-width: calc(100vw - 32px);
+        max-height: min(40dvh, 240px);
+        overflow-y: auto;
+        box-sizing: border-box;
+    }
+}
+
+/* Mobile select sheet: native option popups can extend beyond the viewport. */
+.mobile-select-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 12px;
+    background: rgba(15, 23, 42, .48);
+    box-sizing: border-box;
+}
+.mobile-select-sheet {
+    width: min(100%, 520px);
+    max-height: min(78dvh, 640px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #dbe3ed;
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, .22);
+    direction: rtl;
+}
+.mobile-select-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; color: #17324d; border-bottom: 1px solid #e8eef5; }
+.mobile-select-head button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f1f5f9; color: #334155; font-size: 22px; line-height: 1; }
+.mobile-select-search { margin: 12px 14px 8px; width: calc(100% - 28px); min-height: 42px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 8px 12px; box-sizing: border-box; }
+.mobile-select-options { overflow-y: auto; overscroll-behavior: contain; padding: 4px 10px 12px; }
+.mobile-select-option { display: block; width: 100%; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 8px; background: #fff; color: #1e293b; text-align: right; white-space: normal; overflow-wrap: anywhere; font: inherit; }
+.mobile-select-option + .mobile-select-option { border-top: 1px solid #f1f5f9; }
+.mobile-select-option.is-selected { background: #eaf4ff; color: #0f4c81; font-weight: 700; }
+.mobile-select-empty { padding: 20px 12px; color: #64748b; text-align: center; }
+body.mobile-select-open { overflow: hidden; }
+
+/* The invoice identifier remains pinned in both the body and the scrolling header. */
+#escalationsView #tblEscalations thead th.col-inv-no,
+#escalationsView #tblEscalations tbody td.col-inv-no {
+    position: sticky !important;
+    inset-inline-start: 0;
+    background: #f8fafc;
+    box-shadow: 1px 0 0 #e2e8f0;
+}
+#escalationsView #tblEscalations thead th.col-inv-no { z-index: 8; }
+#escalationsView #tblEscalations tbody td.col-inv-no { z-index: 4; }
+#escalationsView #tblEscalations tbody tr:nth-child(even) td.col-inv-no { background: #f7faff; }
+#escalationsView #tblEscalations tbody tr:hover td.col-inv-no { background: #f8fafc !important; }

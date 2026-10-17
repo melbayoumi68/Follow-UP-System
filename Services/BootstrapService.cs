@@ -983,7 +983,15 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     existing.ClaimsAmount = contract.ClaimsAmount < 0 ? 0 : contract.ClaimsAmount;
                     existing.VatAmount = contract.VatAmount < 0 ? 0 : contract.VatAmount;
                     if (contract.PaymentValue.HasValue)
+                    {
+                        if (existing.PaymentValue != contract.PaymentValue)
+                        {
+                            db.ContractPaymentValueLogs.Add(CreatePaymentValueLog(
+                                existing, existing.PaymentValue, contract.PaymentValue,
+                                existing.PaymentValue.HasValue ? "تعديل عبر الاستيراد" : "إنشاء عبر الاستيراد"));
+                        }
                         existing.PaymentValue = contract.PaymentValue;
+                    }
                     existing.PaymentTerms = contract.PaymentTerms;
                     existing.SignDate = contract.SignDate;
                     existing.ContractDuration = duration;
@@ -996,7 +1004,7 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
             else
             {
                 var duration = contract.ContractDuration > 0 ? contract.ContractDuration : 0;
-                db.Contracts.Add(new Contract
+                var createdContract = new Contract
                 {
                     Id = id,
                     ProjectId = projectId,
@@ -1014,7 +1022,13 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                         ? contract.SignDate.Value.AddDays(duration)
                         : null,
                     Status = contract.Status
-                });
+                };
+                db.Contracts.Add(createdContract);
+                if (createdContract.PaymentValue.HasValue)
+                {
+                    db.ContractPaymentValueLogs.Add(CreatePaymentValueLog(
+                        createdContract, null, createdContract.PaymentValue, "إنشاء عبر الاستيراد"));
+                }
             }
         }
 
@@ -1448,6 +1462,18 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
     }
 
     private static string Tid(string? id) => (id ?? "").Trim();
+
+    private static ContractPaymentValueLog CreatePaymentValueLog(
+        Contract contract, decimal? oldValue, decimal? newValue, string note) => new()
+    {
+        Id = Guid.NewGuid().ToString("N"),
+        ContractId = contract.Id,
+        ProjectId = contract.ProjectId,
+        OldValue = oldValue,
+        NewValue = newValue,
+        ChangedAt = DateTime.UtcNow,
+        Note = note
+    };
 
     private static string? Clip(string? value, int max)
     {

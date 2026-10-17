@@ -70,7 +70,9 @@
                                 <tbody></tbody>
                                 <tfoot>
                                     <tr style="background: #f1f5f9; font-weight: 700;">
-                                        <td colspan="3">الإجمالي العام / المتوسطات</td>
+                                        <td>الإجمالي العام / المتوسطات</td>
+                                        <td></td>
+                                        <td></td>
                                         <td id="repExecFootContract">0.00</td>
                                         <td id="repExecFootExecWV">0.00</td>
                                         <td id="repExecFootExecVO">0.00</td>
@@ -157,8 +159,9 @@
                                     <label for="repEscStatusDetailFilter" style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:0.25rem">تفصيل حالة قابلة للرد</label>
                                     <select class="form-select" id="repEscStatusDetailFilter">
                                         <option value="all">كل الحالات</option>
-                                        <option value="replied">تم الرد</option>
-                                        <option value="unpaid">غير مسدد</option>
+                                        <option value="replied">تم الرد كليًا</option>
+                                        <option value="partial">تم الرد جزئيًا</option>
+                                        <option value="unpaid">لم يتم الرد</option>
                                     </select>
                                 </div>
                             </div>
@@ -175,17 +178,18 @@
                             <table class="data-table" id="tblRepEsc">
                                 <thead>
                                     <tr>
-                                        <th onclick="sortTable('tblRepEsc', 0)">رقم المستخلص</th>
-                                        <th onclick="sortTable('tblRepEsc', 1)">المالك</th>
-                                        <th onclick="sortTable('tblRepEsc', 2)">المشروع</th>
-                                        <th onclick="sortTable('tblRepEsc', 3)">العقد</th>
-                                        <th onclick="sortTable('tblRepEsc', 4)">تاريخ المستخلص</th>
-                                        <th onclick="sortTable('tblRepEsc', 5)">وصف التعلية</th>
-                                        <th onclick="sortTable('tblRepEsc', 6)">قيمة التعلية</th>
-                                        <th onclick="sortTable('tblRepEsc', 7)">حالة الرد</th>
-                                        <th onclick="sortTable('tblRepEsc', 8)">تاريخ الرد</th>
-                                        <th onclick="sortTable('tblRepEsc', 9)">قيمة الرد</th>
-                                        <th onclick="sortTable('tblRepEsc', 10)">المتبقي من التعلية</th>
+                                        <th class="col-inv-no" onclick="sortTable('tblRepEsc', 0)">رقم المستخلص</th>
+                                        <th class="col-inv-date" onclick="sortTable('tblRepEsc', 1)">تاريخ المستخلص</th>
+                                        <th class="col-owner" onclick="sortTable('tblRepEsc', 2)">المالك</th>
+                                        <th class="col-project" onclick="sortTable('tblRepEsc', 3)">المشروع</th>
+                                        <th class="col-contract" onclick="sortTable('tblRepEsc', 4)">العقد</th>
+                                        <th class="col-desc" onclick="sortTable('tblRepEsc', 5)">وصف التعلية</th>
+                                        <th class="col-amount" onclick="sortTable('tblRepEsc', 6)">قيمة التعلية</th>
+                                        <th class="col-follow-up" onclick="sortTable('tblRepEsc', 7)">قابلية الرد</th>
+                                        <th class="col-status" onclick="sortTable('tblRepEsc', 8)">تفصيل حالة قابلة للرد</th>
+                                        <th class="col-resp-date" onclick="sortTable('tblRepEsc', 9)">تاريخ الرد</th>
+                                        <th class="col-ret-amt" onclick="sortTable('tblRepEsc', 10)">قيمة الرد</th>
+                                        <th class="col-days" onclick="sortTable('tblRepEsc', 11)">عدد الأيام</th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -195,6 +199,7 @@
                                         <td colspan="5">الإجمالي العام</td>
                                         <td id="repEscFootTotal">0.00</td>
                                         <td colspan="2"></td>
+                                        <td></td>
                                         <td id="repEscFootReturned" style="color: var(--success);">0.00</td>
                                         <td id="repEscFootRemaining" style="color: var(--warning);">0.00</td>
                                     </tr>
