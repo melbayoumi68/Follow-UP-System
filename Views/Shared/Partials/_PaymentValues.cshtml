@@ -1,0 +1,87 @@
+<div id="paymentValuesView" class="page-view">
+    <div class="table-container">
+        <section class="payment-values-kpis" aria-label="ملخص الدفعات المقدمة">
+            <article class="payment-kpi-card payment-kpi-total">
+                <span class="payment-kpi-icon">＋</span><span class="payment-kpi-label">إجمالي قيمة الدفعات</span>
+                <strong id="paymentValuesCardTotal">0.00</strong><small>على العقود المسجل لها دفعة</small>
+            </article>
+            <article class="payment-kpi-card payment-kpi-deducted">
+                <span class="payment-kpi-icon">↘</span><span class="payment-kpi-label">إجمالي المخصوم</span>
+                <strong id="paymentValuesCardDeducted">0.00</strong><small>من مستخلصات العقود</small>
+            </article>
+            <article class="payment-kpi-card payment-kpi-remaining">
+                <span class="payment-kpi-icon">◷</span><span class="payment-kpi-label">إجمالي المتبقي</span>
+                <strong id="paymentValuesCardRemaining">0.00</strong><small>قيمة الدفعات غير المستردة</small>
+            </article>
+            <article class="payment-kpi-card payment-kpi-count">
+                <span class="payment-kpi-icon">▤</span><span class="payment-kpi-label">العقود المسجل لها دفعة</span>
+                <strong id="paymentValuesCardCount">0</strong><small>عقد</small>
+            </article>
+        </section>
+        <section class="payment-transactions-section payment-summary-section">
+            <div class="payment-section-heading"><div><span class="payment-values-eyebrow">ملخص العقود</span><h3>تفاصيل الدفعة المقدمة لكل عقد</h3><p>قيمة الدفعة ونسبتها وما تم خصمه والمتبقي لكل عقد.</p></div></div>
+        </section>
+        <div class="table-toolbar">
+            <div class="table-toolbar-left">
+                <input type="text" class="form-control table-search" id="searchPaymentValues" placeholder="بحث باسم المشروع أو العقد...">
+            </div>
+        </div>
+        <div class="data-table-wrapper">
+            <table class="data-table payment-values-table" id="tblPaymentValues">
+                <thead>
+                    <tr>
+                        <th>اسم المشروع</th>
+                        <th>اسم العقد</th>
+                        <th>قيمة الدفعة</th>
+                        <th>نسبة الدفعة من قيمة العقد الأصلية</th>
+                        <th>المخصوم من المستخلصات</th>
+                        <th>المتبقي من الدفعة</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+                <tfoot>
+                    <tr class="payment-values-total-row">
+                        <td colspan="6">
+                            <div class="payment-values-total-summary">
+                                <span>عدد العقود: <strong id="paymentValuesFootCount">0</strong></span>
+                                <span>إجمالي قيمة الدفعات: <strong id="paymentValuesFootTotal">0.00</strong></span>
+                                <span>إجمالي المخصوم: <strong id="paymentValuesFootDeducted">0.00</strong></span>
+                                <span>إجمالي المتبقي: <strong id="paymentValuesFootRemaining">0.00</strong></span>
+                            </div>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <div id="pagination-tblPaymentValues"></div>
+  
+        <section class="payment-transactions-section">
+            <div class="payment-section-heading"><div><span class="payment-values-eyebrow">سجل التدقيق</span><h3>معاملات قيمة الدفعة</h3><p>تاريخ إنشاء قيمة الدفعة أو تعديلها، مع القيمة السابقة والجديدة واسم المستخدم.</p></div></div>
+            <div class="data-table-wrapper">
+                <table class="data-table payment-values-table" id="tblPaymentValueHistory">
+                    <thead><tr><th>المشروع</th><th>العقد</th><th>نوع المعاملة</th><th>القيمة السابقة</th><th>القيمة الجديدة</th><th>المستخدم</th><th>التاريخ والوقت</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="pagination-tblPaymentValueHistory"></div>
+        </section>
+        <section class="mc-section payment-values-chart-section" aria-label="تحليل الدفعات المقدمة">
+            <div class="mc-section-head">
+                <div><h3>التحليل المرئي للدفعات المقدمة</h3><p>مقارنة المبالغ التي تم خصمها بالمبالغ المتبقية.</p></div>
+            </div>
+            <div class="mc-charts-grid payment-values-charts">
+                <article class="chart-container payment-chart-card payment-chart-donut">
+                    <h4 class="chart-title">إجمالي المخصوم والمتبقي</h4>
+                    <p class="payment-chart-description">ثلاثة أعمدة تقارن إجمالي الدفعات بما خُصم وما تبقى — القيم بالجنيه.</p>
+                    <div class="chart-body payment-chart-scroll"><div class="payment-chart-canvas-inner"><canvas id="paymentValuesStatusChart" aria-label="مقارنة إجمالي الدفعات بالمخصوم والمتبقي بالأعمدة" role="img"></canvas></div></div>
+                </article>
+                <article class="chart-container payment-chart-card payment-chart-bars">
+                    <h4 class="chart-title">المخصوم والمتبقي لكل عقد</h4>
+                    <p class="payment-chart-description">أعمدة متجاورة للمخصوم والمتبقي في أعلى 8 عقود حسب قيمة الدفعة — القيم بالجنيه.</p>
+                    <div class="chart-body payment-chart-scroll"><div class="payment-chart-canvas-inner payment-chart-contracts-inner"><canvas id="paymentValuesContractsChart" aria-label="أعمدة متجاورة تقارن المخصوم والمتبقي حسب العقد" role="img"></canvas></div></div>
+                </article>
+            </div>
+        </section>
+      
+    </div>
+</div>

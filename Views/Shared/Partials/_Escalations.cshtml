@@ -1,0 +1,67 @@
+ @* Escalations page *@
+     
+            <div id="escalationsView" class="page-view">
+                <div class="table-container">
+                    <div class="table-toolbar"><div class="table-toolbar-left"><input type="text" class="form-control table-search" id="searchEscalations" placeholder="بحث في جميع الأعمدة..."><label class="esc-sort-control" for="escInvoiceDateSort">ترتيب تاريخ المستخلص<select class="form-select" id="escInvoiceDateSort"><option value="desc" selected>الأحدث إلى الأقدم</option><option value="asc">الأقدم إلى الأحدث</option></select></label></div></div>
+                    
+                    <div class="kpi-grid" id="escSummaryBar" style="padding: 1rem 1rem 0 1rem; margin-bottom: 0; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+                        <div class="kpi-card info">
+                            <div class="kpi-label">عدد التعليات</div>
+                            <div class="kpi-value" id="escSummaryCount">0</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">إجمالي قيمة التعليات</div>
+                            <div class="kpi-value" id="escSummaryTotalAmount" data-full="0.00">0.00</div>
+                        </div>
+                        <div class="kpi-card success">
+                            <div class="kpi-label">إجمالي ما تم رده</div>
+                            <div class="kpi-value" id="escSummaryReturnedAmount" data-full="0.00">0.00</div>
+                        </div>
+                        <div class="kpi-card warning">
+                            <div class="kpi-label">إجمالي المتبقي</div>
+                            <div class="kpi-value" id="escSummaryRemainingAmount" data-full="0.00">0.00</div>
+                        </div>
+                        <div class="kpi-card success">
+                            <div class="kpi-label">نسبة الرد</div>
+                            <div class="kpi-value" id="escSummaryReturnRate">0%</div>
+                        </div>
+                    </div>
+
+                    <div class="data-table-wrapper" style="margin-top: 1rem;">
+                        <table class="data-table" id="tblEscalations">
+                            <thead>
+                                <tr>
+                                    <th class="col-inv-no">رقم المستخلص</th>
+                                    <th class="col-inv-date">تاريخ المستخلص</th>
+                                    <th class="col-owner">المالك</th>
+                                    <th class="col-project">المشروع</th>
+                                    <th class="col-contract">العقد</th>
+                                    <th class="col-desc">وصف التعلية</th>
+                                    <th class="col-amount">قيمة التعلية</th>
+                                    <th class="col-follow-up">قابلية الرد</th>
+                                    <th class="col-status">تفصيل حالة قابلة للرد</th>
+                                    <th class="col-resp-date">تاريخ الرد</th>
+                                    <th class="col-ret-amt">قيمة الرد</th>
+                                    <th class="col-days">عدد الأيام</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="esc-total-footer" aria-label="إجماليات التعليات">
+                        <span class="esc-foot-group">
+                            <span class="esc-foot-item esc-foot-count">إجمالي عدد التعليات: <strong id="escFootCount">0</strong></span>
+                            <span class="esc-foot-sep" aria-hidden="true"></span>
+                            <span class="esc-foot-item esc-foot-total">إجمالي قيمة التعليات: <strong id="escFootTotalAmount">0.00</strong></span>
+                            <span class="esc-foot-sep" aria-hidden="true"></span>
+                            <span class="esc-foot-item esc-foot-returned">تم رده: <strong id="escFootReturned">0.00</strong></span>
+                            <span class="esc-foot-sep" aria-hidden="true"></span>
+                            <span class="esc-foot-item esc-foot-remaining">المتبقي: <strong id="escFootRemaining">0.00</strong> (<span id="escFootReturnRate">0.0%</span>)</span>
+                        </span>
+                    </div>
+                    <div id="pagination-tblEscalations"></div>
+                </div>
+            </div>
+
+
+
