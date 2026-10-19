@@ -24,7 +24,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     public DbSet<Sector> Sectors => Set<Sector>();
     public DbSet<SectorManager> SectorManagers => Set<SectorManager>();
+<<<<<<< HEAD
+    public DbSet<ProjectSupplyItem> ProjectSupplyItems => Set<ProjectSupplyItem>();
+    public DbSet<ContractSupplyAllocation> ContractSupplyAllocations => Set<ContractSupplyAllocation>();
+    public DbSet<InvoiceSupplyAllocation> InvoiceSupplyAllocations => Set<InvoiceSupplyAllocation>();
+=======
     public DbSet<ContractSupplyItem> ContractSupplyItems => Set<ContractSupplyItem>();
+>>>>>>> d26c271ae39135c5e0b2c4d13007635f0c4c288a
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -88,6 +94,51 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.ContractDuration).IsRequired();
             e.HasOne(x => x.Project).WithMany(x => x.Contracts).HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.ProjectId);
+        });
+
+        b.Entity<ProjectSupplyItem>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(IdLen);
+            e.Property(x => x.ProjectId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            e.Property(x => x.Unit).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Qty).HasPrecision(18, 2);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+            e.Property(x => x.Total).HasPrecision(18, 2);
+            e.Property(x => x.SupplyDate).HasColumnType("date");
+            e.HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.ProjectId);
+        });
+
+        b.Entity<ContractSupplyAllocation>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(IdLen);
+            e.Property(x => x.ProjectSupplyItemId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.ContractId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.Qty).HasPrecision(18, 2);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+            e.Property(x => x.Total).HasPrecision(18, 2);
+            e.HasOne(x => x.ProjectSupplyItem).WithMany().HasForeignKey(x => x.ProjectSupplyItemId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Contract).WithMany().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.ProjectSupplyItemId);
+            e.HasIndex(x => x.ContractId);
+        });
+
+        b.Entity<InvoiceSupplyAllocation>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(IdLen);
+            e.Property(x => x.InvoiceId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.ContractSupplyAllocationId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.Qty).HasPrecision(18, 2);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+            e.Property(x => x.Total).HasPrecision(18, 2);
+            e.HasOne(x => x.Invoice).WithMany().HasForeignKey(x => x.InvoiceId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ContractSupplyAllocation).WithMany().HasForeignKey(x => x.ContractSupplyAllocationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.InvoiceId);
+            e.HasIndex(x => x.ContractSupplyAllocationId);
         });
 
         b.Entity<ContractPaymentValueLog>(e =>

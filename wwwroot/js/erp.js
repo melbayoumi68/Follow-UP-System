@@ -2140,6 +2140,7 @@ function normalizeBootstrapPayload(raw) {
     voAmount: _dec(c.voAmount),
     claimsAmount: _dec(c.claimsAmount),
     vatAmount: _dec(c.vatAmount),
+    supplyAmount: _dec(c.supplyAmount ?? c.SupplyAmount),
     paymentValue:
       c.paymentValue === null || c.paymentValue === undefined || c.paymentValue === ""
         ? null
@@ -2683,6 +2684,24 @@ function initCentralizedEventListeners() {
   const btnAddProject = document.getElementById("btnAddProject");
   if (btnAddProject)
     btnAddProject.addEventListener("click", () => openProjectModal());
+  document.getElementById("btnAddProjectSupply")?.addEventListener("click", () => addProjectSupplyRow());
+  document.getElementById("projectSupplyRows")?.addEventListener("input", updateProjectSupplyTotal);
+  document.getElementById("projectSupplyRows")?.addEventListener("change", updateProjectSupplyTotal);
+  document.getElementById("projectSupplyRows")?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-remove-project-supply]")) {
+      event.target.closest(".project-supply-row")?.remove();
+      updateProjectSupplyTotal();
+    }
+  });
+  document.getElementById("btnRefreshContractSupplies")?.addEventListener("click", loadContractSupplies);
+  document.getElementById("btnAssignContractSupplies")?.addEventListener("click", assignContractSupplies);
+  ["contractModifiedAmount", "contractVoAmount", "contractClaimsAmount", "contractVatAmount"].forEach(id => document.getElementById(id)?.addEventListener("input", updateContractSupplyPreview));
+  document.getElementById("contractAvailableSupplies")?.addEventListener("input", updateContractSupplyPreview);
+  document.getElementById("contractAvailableSupplies")?.addEventListener("click", updateContractSupplyPreview);
+  document.getElementById("contractLinkedSupplies")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-release-supply]");
+    if (button) releaseContractSupply(button.dataset.releaseSupply);
+  });
 
   const btnAddSector = document.getElementById("btnAddSector");
   if (btnAddSector) btnAddSector.addEventListener("click", openSectorModal);
@@ -4411,14 +4430,14 @@ function renderProjects(data) {
   );
 }
 
-/** إجمالي قيمة العقد المعدل = حصر البنود + VO + التفويضات + الضريبة المضافة */
+/** صافي العقد المعدل = الحصر + VO + التعويضات + الضريبة - التوريدات المرتبطة */
 function getContractModifiedTotal(c) {
   if (!c) return 0;
   return (
     (parseFloat(c.modifiedAmount) || 0) +
     (parseFloat(c.voAmount) || 0) +
     (parseFloat(c.claimsAmount) || 0) +
-    (parseFloat(c.vatAmount) || 0)
+    (parseFloat(c.vatAmount) || 0) - (parseFloat(c.supplyAmount) || 0)
   );
 }
 
@@ -5164,7 +5183,7 @@ function loadExecPositionForProjectAggregate(projectId) {
     const base = parseFloat(c.amount) || 0;
     const mod = parseFloat(c.modifiedAmount) || 0;
     // قيمة العرض: المعدّل إن وُجد وإلا الأصلي
-    return s + (mod !== 0 ? mod : base);
+    return s + Math.max(0, (mod !== 0 ? mod : base) - (parseFloat(c.supplyAmount) || 0));
   }, 0);
 
   const keys = ["workVolume", "variationOrders", "materials", "claims", "vat"];
@@ -6943,6 +6962,57 @@ function initSectorManagerCombobox() {
   });
 }
 
+const PROJECT_SUPPLY_UNITS = ["عدد", "قطعة", "شيكارة", "كيس", "طن", "كيلوجرام", "جرام", "متر", "متر طولي", "متر مربع", "متر مكعب", "لتر", "جالون", "لوح", "لفة", "كرتونة", "نقلة", "طقم", "يوم", "ساعة"];
+
+function addProjectSupplyRow(item = null) {
+  const host = document.getElementById("projectSupplyRows");
+  if (!host) return;
+  const units = PROJECT_SUPPLY_UNITS.map(u => `<option value="${escapeHtml(u)}" ${item?.unit === u ? "selected" : ""}>${escapeHtml(u)}</option>`).join("");
+  const row = document.createElement("div");
+  row.className = "project-supply-row";
+  row.innerHTML = `<div class="form-group"><label>وصف التوريدة *</label><input class="form-control" data-supply-description maxlength="500" value="${escapeHtml(item?.description || "")}" placeholder="مثال: أسمنت بورتلاند"></div>
+    <div class="form-group"><label>الوحدة *</label><select class="form-select" data-supply-unit><option value="">اختر الوحدة</option>${units}</select></div>
+    <div class="form-group"><label>الكمية *</label><input class="form-control" type="number" min="0.01" step="0.01" data-supply-qty value="${item?.qty ?? ""}"></div>
+    <div class="form-group"><label>سعر الوحدة *</label><input class="form-control" type="number" min="0" step="0.01" data-supply-price value="${item?.unitPrice ?? ""}"></div>
+    <div class="form-group"><label>تاريخ التوريد *</label><input class="form-control" type="date" data-supply-date value="${item?.supplyDate || getTodayLocal()}"></div>
+    <div class="form-group"><label>ملاحظات</label><input class="form-control" data-supply-note maxlength="1000" value="${escapeHtml(item?.note || "")}" placeholder="اختياري"></div>
+    <div class="project-supply-row-footer"><span>الإجمالي التقديري <strong data-supply-total>0.00</strong></span><button type="button" class="btn btn-ghost btn-sm" data-remove-project-supply aria-label="حذف صف التوريدة">حذف</button></div>`;
+  host.appendChild(row);
+  updateProjectSupplyTotal();
+}
+
+function updateProjectSupplyTotal() {
+  let total = 0;
+  document.querySelectorAll(".project-supply-row").forEach(row => {
+    const qty = Number(row.querySelector("[data-supply-qty]")?.value) || 0;
+    const price = Number(row.querySelector("[data-supply-price]")?.value) || 0;
+    const line = Math.round(qty * price * 100) / 100;
+    total += line;
+    const label = row.querySelector("[data-supply-total]");
+    if (label) label.textContent = fmtNum(line);
+  });
+  const out = document.getElementById("projectSuppliesTotal");
+  if (out) out.textContent = fmtNum(total);
+}
+
+function collectProjectSupplyRows() {
+  const rows = [...document.querySelectorAll(".project-supply-row")];
+  const result = [];
+  for (const row of rows) {
+    const description = row.querySelector("[data-supply-description]").value.trim();
+    const unit = row.querySelector("[data-supply-unit]").value;
+    const qty = Number(row.querySelector("[data-supply-qty]").value);
+    const unitPrice = Number(row.querySelector("[data-supply-price]").value);
+    const supplyDate = row.querySelector("[data-supply-date]").value;
+    const note = row.querySelector("[data-supply-note]").value.trim();
+    if (![description, unit, row.querySelector("[data-supply-qty]").value, row.querySelector("[data-supply-price]").value, supplyDate].some(Boolean)) continue;
+    if (!description || !unit || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !supplyDate)
+      throw new Error("استكملي وصف ووحدة وكمية وسعر وتاريخ كل توريدة بدأتي إدخالها.");
+    result.push({ payload: { description, unit, qty, unitPrice, supplyDate, note: note || null }, row });
+  }
+  return result;
+}
+
 function openProjectModal() {
   // Permission: create when opening empty form; edit when opening with id is handled by edit*
   if (!assertCan("projects", "create", "إضافة مشروع")) return;
@@ -6951,6 +7021,8 @@ function openProjectModal() {
   document.getElementById("projectName").value = "";
   setInputDate("projectStartDate", getTodayLocal());
   document.getElementById("projectStatus").value = "Active";
+  document.getElementById("projectSupplyRows").innerHTML = "";
+  updateProjectSupplyTotal();
   setSectorManagerCombobox(null);
   document.getElementById("lblProjectModal").innerText = "إضافة مشروع جديد";
   document.getElementById("modalProject").classList.add("active");
@@ -6968,6 +7040,18 @@ function editProject(id) {
   setInputDate("projectStartDate", p.startDate);
   document.getElementById("projectStatus").value = p.status || "Active";
   setSectorManagerCombobox(p.sectorManagerId || null);
+  document.getElementById("projectSupplyRows").innerHTML = "";
+  updateProjectSupplyTotal();
+  erpApi.projects.supplyItems(id).then(items => {
+    const host = document.getElementById("projectSupplyRows");
+    if (!host || document.getElementById("projectId").value !== id) return;
+    items.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "project-existing-supply";
+      row.innerHTML = `<span><strong>${escapeHtml(item.description)}</strong><small>${fmtNum(item.qty)} ${escapeHtml(item.unit)} × ${fmtNum(item.unitPrice)} = ${fmtNum(item.total)}</small><small>المتاح: ${fmtNum(item.availableQty)} ${escapeHtml(item.unit)}</small></span>`;
+      host.appendChild(row);
+    });
+  }).catch(error => console.warn("Could not load project supplies", error));
   document.getElementById("lblProjectModal").innerText = "تعديل بيانات المشروع";
   document.getElementById("modalProject").classList.add("active");
   initFlatpickr();
@@ -6995,6 +7079,10 @@ async function saveProject() {
     return;
   }
 
+  let supplies;
+  try { supplies = collectProjectSupplyRows(); }
+  catch (error) { alert(error.message); return; }
+
   const dto = {
     id: id || null,
     ownerId,
@@ -7005,10 +7093,19 @@ async function saveProject() {
   };
 
   try {
+    let savedProjectId = id;
     if (id) {
       await erpApi.projects.update(id, dto);
     } else {
-      await erpApi.projects.create(dto);
+      const created = await erpApi.projects.create(dto);
+      savedProjectId = created?.id || created?.Id;
+      if (savedProjectId) document.getElementById("projectId").value = savedProjectId;
+    }
+    if (supplies.length && !savedProjectId) throw new Error("تم حفظ المشروع لكن تعذر تحديد رقمه لحفظ التوريدات.");
+    for (let index = 0; index < supplies.length; index++) {
+      await erpApi.projects.addSupplyItem(savedProjectId, supplies[index].payload);
+      supplies[index].row.remove();
+      updateProjectSupplyTotal();
     }
     await syncStateFromBackend();
   } catch (error) {
@@ -7167,6 +7264,100 @@ async function saveSectorManager() {
   }
 }
 
+let activeContractSupplyItems = [];
+let activeContractAllocations = [];
+
+function updateContractSupplyPreview() {
+  const linked = activeContractAllocations.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+  const modified = ["contractModifiedAmount", "contractVoAmount", "contractClaimsAmount", "contractVatAmount"]
+    .reduce((sum, id) => sum + (Number(document.getElementById(id)?.value) || 0), 0);
+  document.getElementById("contractSuppliesLinkedTotal").textContent = fmtNum(linked);
+  document.getElementById("contractNetModifiedAmount").textContent = fmtNum(modified - linked);
+  document.querySelectorAll("[data-supply-choice]").forEach(input => {
+    const row = input.closest(".contract-supply-row");
+    const qty = Number(row?.querySelector("[data-allocation-qty]")?.value) || 0;
+    const price = Number(input.dataset.price) || 0;
+    const out = row?.querySelector("[data-allocation-total]");
+    if (out) out.textContent = fmtNum(qty * price);
+  });
+}
+
+async function loadContractSupplies() {
+  const contractId = document.getElementById("contractId")?.value;
+  const projectId = document.getElementById("contractProjectId")?.value;
+  if (!contractId || !projectId) return;
+  const list = document.getElementById("contractAvailableSupplies");
+  if (list) list.innerHTML = `<div class="supply-empty-state">جارٍ تحميل التوريدات…</div>`;
+  try {
+    const [items, allocations] = await Promise.all([
+      erpApi.projects.supplyItems(projectId),
+      erpApi.contracts.supplyAllocations(contractId)
+    ]);
+    if (document.getElementById("contractId")?.value !== contractId) return;
+    activeContractSupplyItems = Array.isArray(items) ? items : [];
+    activeContractAllocations = Array.isArray(allocations) ? allocations : [];
+    if (list) list.innerHTML = activeContractSupplyItems.length ? activeContractSupplyItems.map(item => {
+      const available = Math.max(0, Number(item.availableQty) || 0);
+      return `<article class="contract-supply-row ${available <= 0 ? "is-unavailable" : ""}">
+        <label class="contract-supply-select"><input type="checkbox" data-supply-choice data-id="${escapeHtml(item.id)}" data-price="${Number(item.unitPrice) || 0}" ${available <= 0 ? "disabled" : ""}><span></span></label>
+        <div class="contract-supply-info"><strong>${escapeHtml(item.description)}</strong><span>إجمالي المشروع: ${fmtNum(item.qty)} ${escapeHtml(item.unit)} · المتاح: <b>${fmtNum(available)} ${escapeHtml(item.unit)}</b></span><small>سعر الوحدة: ${fmtNum(item.unitPrice)} ج.م</small></div>
+        <div class="contract-supply-qty"><label>الكمية على العقد</label><input type="number" class="form-control" data-allocation-qty min="0.01" max="${available}" step="0.01" value="${available > 0 ? available : ""}" ${available <= 0 ? "disabled" : ""}></div>
+        <div class="contract-supply-line-total"><small>قيمة الخصم</small><strong data-allocation-total>${fmtNum(available * Number(item.unitPrice))}</strong></div>
+      </article>`;
+    }).join("") : `<div class="supply-empty-state">لا توجد توريدات مسجلة على هذا المشروع.</div>`;
+    const linkedHost = document.getElementById("contractLinkedSupplies");
+    if (linkedHost) linkedHost.innerHTML = activeContractAllocations.length ? activeContractAllocations.map(a => `<article class="contract-linked-row"><div><strong>${escapeHtml(a.description)}</strong><small>${fmtNum(a.qty)} ${escapeHtml(a.unit)} × ${fmtNum(a.unitPrice)} ج.م</small></div><b>${fmtNum(a.total)} ج.م</b><button type="button" class="btn btn-ghost btn-sm" data-release-supply="${escapeHtml(a.id)}">فك الربط</button></article>`).join("") : `<div class="supply-empty-state">لم يتم ربط توريدات بهذا العقد بعد.</div>`;
+    updateContractSupplyPreview();
+  } catch (error) {
+    console.error("Load contract supplies failed:", error);
+    if (list) list.innerHTML = `<div class="supply-empty-state supply-error">تعذر تحميل التوريدات: ${escapeHtml(error.message || "")}</div>`;
+  }
+}
+
+async function assignContractSupplies() {
+  const contractId = document.getElementById("contractId")?.value;
+  if (!contractId) return;
+  const selected = [...document.querySelectorAll("[data-supply-choice]:checked")];
+  if (!selected.length) { alert("اختاري توريدة واحدة على الأقل."); return; }
+  for (const checkbox of selected) {
+    const qty = Number(checkbox.closest(".contract-supply-row")?.querySelector("[data-allocation-qty]")?.value);
+    const item = activeContractSupplyItems.find(x => x.id === checkbox.dataset.id);
+    const available = Number(item?.availableQty) || 0;
+    if (!Number.isFinite(qty) || qty <= 0 || qty > available) {
+      alert(`الكمية يجب أن تكون أكبر من صفر ولا تتجاوز المتاح (${fmtNum(available)}).`); return;
+    }
+  }
+  const button = document.getElementById("btnAssignContractSupplies");
+  if (button) button.disabled = true;
+  try {
+    for (const checkbox of selected) {
+      const qty = Number(checkbox.closest(".contract-supply-row").querySelector("[data-allocation-qty]").value);
+      await erpApi.contracts.assignSupply(contractId, { projectSupplyItemId: checkbox.dataset.id, qty });
+    }
+    await loadContractSupplies();
+    await syncStateFromBackend();
+    applyGlobalFilters();
+    erpNotify.showToast("تم ربط التوريدات وخصم قيمتها من صافي العقد المعدل", "success");
+  } catch (error) {
+    console.error("Assign supply failed:", error);
+    alert("تعذر ربط التوريدة: " + (error.message || ""));
+    await loadContractSupplies();
+    await syncStateFromBackend();
+  } finally { if (button) button.disabled = false; }
+}
+
+async function releaseContractSupply(allocationId) {
+  const contractId = document.getElementById("contractId")?.value;
+  if (!contractId || !allocationId) return;
+  if (!(await erpNotify.showConfirm("سيتم فك ربط هذه الكمية وإعادتها إلى المتاح بالمشروع. هل تريدين المتابعة؟", { title: "فك ربط التوريدة", confirmText: "فك الربط", cancelText: "إلغاء" }))) return;
+  try {
+    await erpApi.contracts.releaseSupply(contractId, allocationId);
+    await loadContractSupplies();
+    await syncStateFromBackend();
+    applyGlobalFilters();
+  } catch (error) { alert("تعذر فك الربط: " + (error.message || "")); }
+}
+
 function openContractModal() {
   // Permission: create when opening empty form; edit when opening with id is handled by edit*
   if (!assertCan("contracts", "create", "إضافة عقد")) return;
@@ -7188,6 +7379,7 @@ function openContractModal() {
     document.getElementById("EndDate");
   if (contractEndDateEl) contractEndDateEl.value = "";
   document.getElementById("contractStatus").value = "Active";
+  document.getElementById("contractSuppliesPanel").hidden = true;
   document.getElementById("lblContractModal").innerText = "إضافة عقد جديد";
   document.getElementById("modalContract").classList.add("active");
   initFlatpickr();
@@ -7223,9 +7415,11 @@ function editContract(id) {
     contractEndDateEl.value = c.endDate ? fmtDisplayDate(c.endDate) : "-";
   }
   document.getElementById("contractStatus").value = c.status || "Active";
+  document.getElementById("contractSuppliesPanel").hidden = false;
   document.getElementById("lblContractModal").innerText = "تعديل بيانات العقد";
   document.getElementById("modalContract").classList.add("active");
   initFlatpickr();
+  loadContractSupplies();
 }
 
 async function saveContract() {

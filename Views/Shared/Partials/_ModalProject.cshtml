@@ -1,6 +1,6 @@
 @* modalProject *@
 <div class="modal-overlay" id="modalProject">
-    <div class="modal-card" style="max-width: 600px;">
+    <div class="modal-card project-modal-card">
         <div class="modal-header"><h3 class="modal-title" id="lblProjectModal">إضافة مشروع</h3><button class="modal-close">&times;</button></div>
         <div class="modal-body">
             <form id="formProject" class="form-grid">
@@ -16,6 +16,14 @@
                            placeholder="ابحث عن مدير القطاع..." autocomplete="off" autocorrect="off" spellcheck="false">
                     <div id="projectSectorManagerDropdown" class="sector-manager-dropdown" style="display:none;"></div>
                 </div>
+                <section class="project-supplies-section span-full" aria-labelledby="projectSuppliesHeading">
+                    <div class="supply-section-heading">
+                        <div><h4 id="projectSuppliesHeading">توريدات المشروع</h4><p>تُسجل على المشروع أولاً، ولا تخصم من أي عقد إلا بعد ربط الكمية بالعقد.</p></div>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btnAddProjectSupply">إضافة توريدة</button>
+                    </div>
+                    <div id="projectSupplyRows" class="project-supply-rows"></div>
+                    <div class="supply-section-total">إجمالي التوريدات المدخلة <strong id="projectSuppliesTotal">0.00</strong></div>
+                </section>
             </form>
         </div>
         <div class="modal-footer"><button class="btn btn-secondary modal-cancel">إلغاء</button><button class="btn btn-primary" id="btnSaveProject">حفظ</button></div>

@@ -26,33 +26,12 @@ public class UserStore : InvoicesErp.Interfaces.IUserStore
     }
 
     /// <summary>
-    /// Ensures AppUsers table exists and seeds the default admin if the table is empty.
+    /// Seeds the default admin if the AppUsers table is empty.
+    /// The table itself is created manually in SQL Server (SSMS); no DDL runs at startup.
     /// Safe to call on every startup.
     /// </summary>
-    public static async Task EnsureSchemaAndSeedAsync(AppDbContext db)
+    public static async Task SeedAdminAsync(AppDbContext db)
     {
-        // Create table if missing (does not alter other existing schema).
-        await db.Database.ExecuteSqlRawAsync("""
-            IF OBJECT_ID(N'dbo.AppUsers', N'U') IS NULL
-            BEGIN
-                CREATE TABLE dbo.AppUsers (
-                    Id              NVARCHAR(64)  NOT NULL CONSTRAINT PK_AppUsers PRIMARY KEY,
-                    Username        NVARCHAR(100) NOT NULL,
-                    PasswordHash    NVARCHAR(500) NOT NULL,
-                    DisplayName     NVARCHAR(200) NOT NULL,
-                    Email           NVARCHAR(250) NULL,
-                    Role            NVARCHAR(50)  NOT NULL,
-                    Status          NVARCHAR(20)  NOT NULL,
-                    PermissionsJson NVARCHAR(MAX) NOT NULL,
-                    CreatedAt       DATETIME2     NOT NULL,
-                    UpdatedAt       DATETIME2     NOT NULL
-                );
-                CREATE UNIQUE INDEX IX_AppUsers_Username ON dbo.AppUsers (Username);
-                CREATE UNIQUE INDEX IX_AppUsers_Email ON dbo.AppUsers (Email)
-                    WHERE Email IS NOT NULL AND Email <> N'';
-            END
-            """);
-
         if (await db.AppUsers.AnyAsync())
             return;
 

@@ -39,7 +39,8 @@ public class ContractsController(AppDbContext db) : ControllerBase
             "signdate" => desc ? q.OrderByDescending(x => x.SignDate) : q.OrderBy(x => x.SignDate),
             _ => desc ? q.OrderByDescending(x => x.Name) : q.OrderBy(x => x.Name)
         };
-        var projected = q.Select(x => new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue));
+        var projected = q.Select(x => new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue,
+            db.ContractSupplyAllocations.Where(a => a.ContractId == x.Id).Sum(a => (decimal?)a.Total) ?? 0m));
         if (page is null)
             return Ok(await projected.ToListAsync(ct));
         return Ok(await projected.ToPagedAsync(page.Value, pageSize ?? 25, ct));
@@ -50,7 +51,8 @@ public class ContractsController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<ContractDto>> GetById(string id, CancellationToken ct)
     {
         var x = await db.Contracts.FindAsync([id], ct);
-        return x is null ? NotFound() : Ok(new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue));
+        return x is null ? NotFound() : Ok(new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue,
+            await db.ContractSupplyAllocations.Where(a => a.ContractId == x.Id).SumAsync(a => (decimal?)a.Total, ct) ?? 0m));
     }
 
     [HttpPost]
@@ -115,7 +117,7 @@ public class ContractsController(AppDbContext db) : ControllerBase
 
         await db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(GetById), new { id = x.Id },
-            new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue));
+            new ContractDto(x.Id, x.ProjectId, x.Name, x.Amount, x.ModifiedAmount, x.VoAmount, x.ClaimsAmount, x.VatAmount, x.PaymentTerms, x.SignDate, x.Status, x.ContractDuration, x.EndDate, x.PaymentValue, 0m));
     }
 
     [HttpPut("{id}")]
