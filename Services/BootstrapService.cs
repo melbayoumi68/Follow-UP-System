@@ -48,7 +48,8 @@ public class BootstrapService(AppDbContext db) : InvoicesErp.Interfaces.IBootstr
                     x.Status,
                     x.ContractDuration,
                     x.EndDate,
-                    x.PaymentValue
+                    x.PaymentValue,
+                    db.ContractSupplyAllocations.Where(a => a.ContractId == x.Id).Sum(a => (decimal?)a.Total) ?? 0m
                 ))
                 .ToListAsync(ct),
 

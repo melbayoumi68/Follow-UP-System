@@ -39,8 +39,9 @@ public class CostControlController(AppDbContext db, InvoicesErp.Interfaces.ICost
     /// قيمة العقد المعدل من موديول العقود (لا تُدخل يدويًا في Cost Control):
     /// الأساس = ModifiedAmount إن وُجد وإلا Amount، ثم + VO + Claims + VAT
     /// </summary>
- private static decimal GetRevisedContractValue(Contract c)
-    => c.ModifiedAmount + c.VoAmount + c.ClaimsAmount + c.VatAmount;
+ private async Task<decimal> GetRevisedContractValueAsync(Contract c, CancellationToken ct)
+    => c.ModifiedAmount + c.VoAmount + c.ClaimsAmount + c.VatAmount
+       - (await db.ContractSupplyAllocations.AsNoTracking().Where(a => a.ContractId == c.Id).SumAsync(a => (decimal?)a.Total, ct) ?? 0m);
 
     private async Task<(decimal progressAmount, decimal progressPct)> GetProgressAsync(string contractId, decimal revisedValue, CancellationToken ct)
     {
@@ -96,7 +97,7 @@ public class CostControlController(AppDbContext db, InvoicesErp.Interfaces.ICost
             .FirstOrDefaultAsync(c => c.Id == cc.ContractId, ct);
         if (contract is null) return null;
 
-        var revised = GetRevisedContractValue(contract);
+        var revised = await GetRevisedContractValueAsync(contract, ct);
         var original = contract.Amount < 0 ? 0 : contract.Amount;
         var (progressAmount, progressPct) = await GetProgressAsync(contract.Id, revised, ct);
 
@@ -346,7 +347,7 @@ public class CostControlController(AppDbContext db, InvoicesErp.Interfaces.ICost
         await db.SaveChangesAsync(ct);
 
         var contract = await db.Contracts.AsNoTracking().FirstAsync(c => c.Id == cc.ContractId, ct);
-        var revised = GetRevisedContractValue(contract);
+        var revised = await GetRevisedContractValueAsync(contract, ct);
         var original = contract.Amount < 0 ? 0 : contract.Amount;
         var (_, progressPct) = await GetProgressAsync(cc.ContractId, revised, ct);
         var (progressAmount, progressPct2) = await GetProgressAsync(cc.ContractId, revised, ct);
@@ -440,7 +441,7 @@ public class CostControlController(AppDbContext db, InvoicesErp.Interfaces.ICost
         await db.SaveChangesAsync(ct);
 
         var contract = await db.Contracts.AsNoTracking().FirstAsync(c => c.Id == item.CostControl.ContractId, ct);
-        var revised = GetRevisedContractValue(contract);
+        var revised = await GetRevisedContractValueAsync(contract, ct);
         var original = contract.Amount < 0 ? 0 : contract.Amount;
         var (progressAmount, progressPct) = await GetProgressAsync(item.CostControl.ContractId, revised, ct);
         return Ok(calc.MapSubItem(sub, original, revised, progressAmount, progressPct));
@@ -469,7 +470,7 @@ public class CostControlController(AppDbContext db, InvoicesErp.Interfaces.ICost
 
         var contract = await db.Contracts.AsNoTracking()
             .FirstAsync(c => c.Id == sub.CostControlItem.CostControl.ContractId, ct);
-        var revised = GetRevisedContractValue(contract);
+        var revised = await GetRevisedContractValueAsync(contract, ct);
         var original = contract.Amount < 0 ? 0 : contract.Amount;
         var (progressAmount, progressPct) = await GetProgressAsync(sub.CostControlItem.CostControl.ContractId, revised, ct);
         return Ok(calc.MapSubItem(sub, original, revised, progressAmount, progressPct));

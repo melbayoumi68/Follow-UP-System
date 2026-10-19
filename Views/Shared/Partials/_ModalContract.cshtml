@@ -1,6 +1,6 @@
 @* modalContract *@
 <div class="modal-overlay" id="modalContract">
-    <div class="modal-card" style="max-width: 700px;">
+    <div class="modal-card contract-modal-card">
         <div class="modal-header"><h3 class="modal-title" id="lblContractModal">إضافة عقد</h3><button class="modal-close">&times;</button></div>
         <div class="modal-body">
             <form id="formContract" class="form-grid">
@@ -31,6 +31,16 @@
                 <div class="form-group"><label>قيمة VO</label><input type="number" step="any" class="form-control" id="contractVoAmount" value="0" readonly title="تُحدَّث من الموقف التنفيذي"></div>
                 <div class="form-group"><label>قيمة التعويضات</label><input type="number" step="any" class="form-control" id="contractClaimsAmount" value="0" readonly title="تُحدَّث من الموقف التنفيذي"></div>
                 <div class="form-group"><label>قيمة الضريبة المضافة</label><input type="number" step="any" class="form-control" id="contractVatAmount" value="0" readonly title="تُحدَّث من الموقف التنفيذي"></div>
+                <section id="contractSuppliesPanel" class="contract-supplies-panel span-full" hidden>
+                    <div class="supply-section-heading">
+                        <div><h4>توريدات المشروع المرتبطة بالعقد</h4><p>اختاري كمية من المتاح على المشروع. القيمة المرتبطة تخصم من قيمة العقد المعدل.</p></div>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshContractSupplies">تحديث</button>
+                    </div>
+                    <div id="contractAvailableSupplies" class="contract-supply-list"></div>
+                    <button type="button" class="btn btn-primary" id="btnAssignContractSupplies">ربط الكميات المختارة بالعقد</button>
+                    <div class="supply-linked-list-wrap"><h5>التوريدات المرتبطة</h5><div id="contractLinkedSupplies" class="contract-supply-list"></div></div>
+                    <div class="supply-net-summary"><span>إجمالي التوريدات المرتبطة <strong id="contractSuppliesLinkedTotal">0.00</strong></span><span>صافي قيمة العقد المعدل <strong id="contractNetModifiedAmount">0.00</strong></span></div>
+                </section>
             </form>
         </div>
         <div class="modal-footer"><button class="btn btn-secondary modal-cancel">إلغاء</button><button class="btn btn-primary" id="btnSaveContract">حفظ</button></div>

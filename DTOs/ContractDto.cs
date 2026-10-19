@@ -14,4 +14,5 @@ public record ContractDto(
     string? Status,
     int ContractDuration,
     DateOnly? EndDate,
-    decimal? PaymentValue);
+    decimal? PaymentValue,
+    decimal SupplyAmount = 0);

@@ -95,10 +95,15 @@ export const erpApi = {
   sectorManagers: collection('sector-managers'),
   projects: {
     ...collection('projects'),
-    getSectorManagers: () => request('/projects/sector-managers', { method: 'GET' })
+    getSectorManagers: () => request('/projects/sector-managers', { method: 'GET' }),
+    supplyItems: (projectId) => request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: 'GET' }),
+    addSupplyItem: (projectId, payload) => request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: 'POST', body: JSON.stringify(payload) })
   },
   contracts: {
     ...collection('contracts'),
+    supplyAllocations: (contractId) => request(`/contracts/${encodeURIComponent(contractId)}/supply-allocations`, { method: 'GET' }),
+    assignSupply: (contractId, payload) => request(`/contracts/${encodeURIComponent(contractId)}/supply-allocations`, { method: 'POST', body: JSON.stringify(payload) }),
+    releaseSupply: (contractId, allocationId) => request(`/contracts/${encodeURIComponent(contractId)}/supply-allocations/${encodeURIComponent(allocationId)}`, { method: 'DELETE' }),
     getPaymentValueLogs: (id) => {
       const trimmedId = id != null ? String(id).trim() : '';
       if (!trimmedId) return Promise.resolve([]);
