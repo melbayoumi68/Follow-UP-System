@@ -24,9 +24,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     public DbSet<Sector> Sectors => Set<Sector>();
     public DbSet<SectorManager> SectorManagers => Set<SectorManager>();
+<<<<<<< HEAD
     public DbSet<ProjectSupplyItem> ProjectSupplyItems => Set<ProjectSupplyItem>();
     public DbSet<ContractSupplyAllocation> ContractSupplyAllocations => Set<ContractSupplyAllocation>();
     public DbSet<InvoiceSupplyAllocation> InvoiceSupplyAllocations => Set<InvoiceSupplyAllocation>();
+=======
+    public DbSet<ContractSupplyItem> ContractSupplyItems => Set<ContractSupplyItem>();
+>>>>>>> d26c271ae39135c5e0b2c4d13007635f0c4c288a
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -342,5 +346,30 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.SectorId)
                 .IsUnique();
         });
+
+        b.Entity<ContractSupplyItem>(e =>
+{
+    e.HasKey(x => x.Id);
+    e.Property(x => x.Id).HasMaxLength(IdLen);
+    e.Property(x => x.ContractId).HasMaxLength(IdLen).IsRequired();
+    e.Property(x => x.ProjectId).HasMaxLength(IdLen).IsRequired();
+    e.Property(x => x.Description).HasMaxLength(500).IsRequired();
+    e.Property(x => x.Unit).HasMaxLength(50).IsRequired();
+    e.Property(x => x.Qty).HasPrecision(18, 2);
+    e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+    e.Property(x => x.Total).HasPrecision(18, 2);
+    e.Property(x => x.SupplierName).HasMaxLength(250).IsRequired();
+    e.Property(x => x.SupplyDate).HasColumnType("date");
+    e.Property(x => x.Note).HasMaxLength(1000);
+
+    e.HasOne(x => x.Contract)
+        .WithMany()   // أو WithMany(c => c.SupplyItems) لو ضفت Navigation في Contract
+        .HasForeignKey(x => x.ContractId)
+        .OnDelete(DeleteBehavior.Cascade);
+
+    e.HasIndex(x => x.ContractId);
+    e.HasIndex(x => x.ProjectId);
+    e.HasIndex(x => x.SupplyDate);
+});
     }
 }
