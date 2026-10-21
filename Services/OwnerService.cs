@@ -81,14 +81,27 @@ public sealed class OwnerService(AppDbContext db) : IOwnerService
                     if (deductionIds.Count > 0)
                         await db.EscalationResponses.Where(e => deductionIds.Contains(e.InvoiceDeductionId)).ExecuteDeleteAsync(ct);
                     await db.SocialInsurancePayments.Where(p => invoiceIds.Contains(p.InvoiceId)).ExecuteDeleteAsync(ct);
+                    // Invoice supply allocations must go before both the invoices and the contract allocations.
+                    await db.InvoiceSupplyAllocations.Where(a => invoiceIds.Contains(a.InvoiceId)).ExecuteDeleteAsync(ct);
                     await db.InvoiceDeductions.Where(d => invoiceIds.Contains(d.InvoiceId)).ExecuteDeleteAsync(ct);
                     await db.InvoiceItems.Where(i => invoiceIds.Contains(i.InvoiceId)).ExecuteDeleteAsync(ct);
                     await db.Invoices.Where(i => invoiceIds.Contains(i.Id)).ExecuteDeleteAsync(ct);
                 }
+
+                // Contract supply allocations are referenced by invoices (NO ACTION), so delete them
+                // explicitly before the contracts are removed.
+                await db.ContractSupplyAllocations.Where(a => contractIds.Contains(a.ContractId)).ExecuteDeleteAsync(ct);
+
                 await db.ExecPositions.Where(e => contractIds.Contains(e.ContractId)).ExecuteDeleteAsync(ct);
                 await db.SocialInsuranceContracts.Where(s => contractIds.Contains(s.ContractId)).ExecuteDeleteAsync(ct);
+                await db.ContractPaymentValueLogs.Where(l => contractIds.Contains(l.ContractId)).ExecuteDeleteAsync(ct);
                 await db.Contracts.Where(c => contractIds.Contains(c.Id)).ExecuteDeleteAsync(ct);
             }
+
+            // Supply rows reference the project and its supply items with NO ACTION,
+            // so they must be removed before the projects are deleted.
+            await db.SupplyCatalogAssignments.Where(a => projectIds.Contains(a.ProjectId)).ExecuteDeleteAsync(ct);
+            await db.ProjectSupplyItems.Where(s => projectIds.Contains(s.ProjectId)).ExecuteDeleteAsync(ct);
             await db.Projects.Where(p => projectIds.Contains(p.Id)).ExecuteDeleteAsync(ct);
         }
 

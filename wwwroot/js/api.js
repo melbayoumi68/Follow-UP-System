@@ -99,6 +99,13 @@ export const erpApi = {
     supplyItems: (projectId) => request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: 'GET' }),
     addSupplyItem: (projectId, payload) => request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: 'POST', body: JSON.stringify(payload) })
   },
+  supplyCatalog: {
+    list: () => request('/supply-catalog', { method: 'GET' }),
+    create: (payload) => request('/supply-catalog', { method: 'POST', body: JSON.stringify(payload) }),
+    updateStatus: (id, status) => request(`/supply-catalog/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    assignments: (id) => request(`/supply-catalog/${encodeURIComponent(id)}/assignments`, { method: 'GET' }),
+    assign: (id, payload) => request(`/supply-catalog/${encodeURIComponent(id)}/assignments`, { method: 'POST', body: JSON.stringify(payload) })
+  },
   contracts: {
     ...collection('contracts'),
     supplyAllocations: (contractId) => request(`/contracts/${encodeURIComponent(contractId)}/supply-allocations`, { method: 'GET' }),
@@ -116,7 +123,10 @@ export const erpApi = {
     getById: (id) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'GET' }),
     create: (payload) => request('/invoices', { method: 'POST', body: JSON.stringify(payload) }),
     update: (id, payload) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
-    remove: (id) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    remove: (id) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    supplyAllocations: (id) => request(`/invoices/${encodeURIComponent(id)}/supply-allocations`, { method: 'GET' }),
+    addSupplyAllocation: (id, payload) => request(`/invoices/${encodeURIComponent(id)}/supply-allocations`, { method: 'POST', body: JSON.stringify(payload) }),
+    deleteSupplyAllocation: (id, allocationId) => request(`/invoices/${encodeURIComponent(id)}/supply-allocations/${encodeURIComponent(allocationId)}`, { method: 'DELETE' })
   },
   dashboard: () => request('/reports/dashboard', { method: 'GET' }),
   approveInvoice: (id) => request(`/invoices/${encodeURIComponent(id)}/approve`, { method: 'POST' }),

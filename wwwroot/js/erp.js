@@ -1,5 +1,5 @@
 
-import { erpApi } from "./api.js?v=2";
+import { erpApi } from "./api.js?v=4";
 import { renderDashboardCharts, resizeDashboardCharts } from "./dashboard-charts.js?v=15";
 import { createMultiFilter } from "./multi-filter.js?v=1";
 // flatpickr loaded globally via CDN
@@ -980,6 +980,7 @@ const PAGE_TO_MODULE = {
   dashboardView: "dashboard",
   ownersView: "owners",
   projectsView: "projects",
+  suppliesView: "projects",
   contractsView: "contracts",
   paymentValuesView: "contracts",
   invoicesView: "invoices",
@@ -1880,6 +1881,7 @@ async function initERP() {
   syncAllSocialInsuranceInvoices();
   populateDropdowns();
   applyGlobalFilters();
+  if (document.getElementById("suppliesView")?.classList.contains("active")) loadSuppliesPage();
   initFlatpickr();
   if (!loadedFromApi) clearDataState();
 }
@@ -2560,6 +2562,7 @@ function initCentralizedEventListeners() {
       const pageId = link.getAttribute("data-page");
       activatePage(pageId);
       applyGlobalFilters();
+      if (pageId === "suppliesView") loadSuppliesPage();
     });
   });
 
@@ -2684,15 +2687,29 @@ function initCentralizedEventListeners() {
   const btnAddProject = document.getElementById("btnAddProject");
   if (btnAddProject)
     btnAddProject.addEventListener("click", () => openProjectModal());
-  document.getElementById("btnAddProjectSupply")?.addEventListener("click", () => addProjectSupplyRow());
-  document.getElementById("projectSupplyRows")?.addEventListener("input", updateProjectSupplyTotal);
-  document.getElementById("projectSupplyRows")?.addEventListener("change", updateProjectSupplyTotal);
-  document.getElementById("projectSupplyRows")?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-remove-project-supply]")) {
-      event.target.closest(".project-supply-row")?.remove();
-      updateProjectSupplyTotal();
-    }
+  document.getElementById("supplyCatalogForm")?.addEventListener("submit", event => { event.preventDefault(); saveSupplyFromPage(); });
+  ["supplyType", "supplyUnit"].forEach(id => {
+    const field = document.getElementById(id);
+    if (!field) return;
+    const clearInvalid = () => {
+      field.classList.remove("is-invalid");
+      const status = document.getElementById("supplyFormStatus");
+      if (status?.classList.contains("is-error")) status.textContent = "";
+    };
+    field.addEventListener("input", clearInvalid);
+    field.addEventListener("change", clearInvalid);
   });
+  document.getElementById("supplyCatalogSearch")?.addEventListener("input", () => { supplyCatalogPage = 1; renderSupplyCatalog(); });
+  document.getElementById("supplyCatalogPageSize")?.addEventListener("change", () => { supplyCatalogPage = 1; renderSupplyCatalog(); });
+  document.getElementById("supplyCatalogPageControls")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-supply-page]");
+    if (!button || button.disabled) return;
+    supplyCatalogPage = Number(button.dataset.supplyPage) || 1;
+    renderSupplyCatalog();
+  });
+  document.querySelectorAll("[data-supply-tab]").forEach(button => button.addEventListener("click", () => setSupplyWorkspaceTab(button.dataset.supplyTab)));
+  document.getElementById("supplyCatalogSelect")?.addEventListener("change", loadSupplyAssignmentDetail);
+  initSupplyAssignmentsWorkspace();
   document.getElementById("btnRefreshContractSupplies")?.addEventListener("click", loadContractSupplies);
   document.getElementById("btnAssignContractSupplies")?.addEventListener("click", assignContractSupplies);
   ["contractModifiedAmount", "contractVoAmount", "contractClaimsAmount", "contractVatAmount"].forEach(id => document.getElementById(id)?.addEventListener("input", updateContractSupplyPreview));
@@ -2758,6 +2775,7 @@ function initCentralizedEventListeners() {
       populateModalContracts(invProj ? invProj.value : "");
       updateInvoiceDueDate();
       loadPreviousInvoiceValues();
+      refreshMaterialsDeductionCards();
     });
   }
 
@@ -2766,6 +2784,7 @@ function initCentralizedEventListeners() {
       populateModalContracts(invProj.value);
       updateInvoiceDueDate();
       loadPreviousInvoiceValues();
+      refreshMaterialsDeductionCards();
     });
   }
 
@@ -2773,6 +2792,7 @@ function initCentralizedEventListeners() {
     invCont.addEventListener("change", () => {
       updateInvoiceDueDate();
       loadPreviousInvoiceValues();
+      refreshMaterialsDeductionCards();
     });
   }
 
@@ -3364,6 +3384,7 @@ function applyGlobalFilters() {
   renderEscalations(escData);
   renderReports(filteredData);
   renderSocialInsurance(filteredData);
+  if (typeof refreshSupplyProjectPool === "function") refreshSupplyProjectPool();
   if (typeof applyPermissionUI === "function") applyPermissionUI();
 }
 
@@ -6962,55 +6983,711 @@ function initSectorManagerCombobox() {
   });
 }
 
-const PROJECT_SUPPLY_UNITS = ["عدد", "قطعة", "شيكارة", "كيس", "طن", "كيلوجرام", "جرام", "متر", "متر طولي", "متر مربع", "متر مكعب", "لتر", "جالون", "لوح", "لفة", "كرتونة", "نقلة", "طقم", "يوم", "ساعة"];
-
-function addProjectSupplyRow(item = null) {
-  const host = document.getElementById("projectSupplyRows");
-  if (!host) return;
-  const units = PROJECT_SUPPLY_UNITS.map(u => `<option value="${escapeHtml(u)}" ${item?.unit === u ? "selected" : ""}>${escapeHtml(u)}</option>`).join("");
-  const row = document.createElement("div");
-  row.className = "project-supply-row";
-  row.innerHTML = `<div class="form-group"><label>وصف التوريدة *</label><input class="form-control" data-supply-description maxlength="500" value="${escapeHtml(item?.description || "")}" placeholder="مثال: أسمنت بورتلاند"></div>
-    <div class="form-group"><label>الوحدة *</label><select class="form-select" data-supply-unit><option value="">اختر الوحدة</option>${units}</select></div>
-    <div class="form-group"><label>الكمية *</label><input class="form-control" type="number" min="0.01" step="0.01" data-supply-qty value="${item?.qty ?? ""}"></div>
-    <div class="form-group"><label>سعر الوحدة *</label><input class="form-control" type="number" min="0" step="0.01" data-supply-price value="${item?.unitPrice ?? ""}"></div>
-    <div class="form-group"><label>تاريخ التوريد *</label><input class="form-control" type="date" data-supply-date value="${item?.supplyDate || getTodayLocal()}"></div>
-    <div class="form-group"><label>ملاحظات</label><input class="form-control" data-supply-note maxlength="1000" value="${escapeHtml(item?.note || "")}" placeholder="اختياري"></div>
-    <div class="project-supply-row-footer"><span>الإجمالي التقديري <strong data-supply-total>0.00</strong></span><button type="button" class="btn btn-ghost btn-sm" data-remove-project-supply aria-label="حذف صف التوريدة">حذف</button></div>`;
-  host.appendChild(row);
-  updateProjectSupplyTotal();
+function getProjectSupplyItems(projectId) {
+  return erpApi.projects?.supplyItems
+    ? erpApi.projects.supplyItems(projectId)
+    : erpApi.request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: "GET" });
 }
 
-function updateProjectSupplyTotal() {
-  let total = 0;
-  document.querySelectorAll(".project-supply-row").forEach(row => {
-    const qty = Number(row.querySelector("[data-supply-qty]")?.value) || 0;
-    const price = Number(row.querySelector("[data-supply-price]")?.value) || 0;
-    const line = Math.round(qty * price * 100) / 100;
-    total += line;
-    const label = row.querySelector("[data-supply-total]");
-    if (label) label.textContent = fmtNum(line);
-  });
-  const out = document.getElementById("projectSuppliesTotal");
-  if (out) out.textContent = fmtNum(total);
-}
-
-function collectProjectSupplyRows() {
-  const rows = [...document.querySelectorAll(".project-supply-row")];
-  const result = [];
-  for (const row of rows) {
-    const description = row.querySelector("[data-supply-description]").value.trim();
-    const unit = row.querySelector("[data-supply-unit]").value;
-    const qty = Number(row.querySelector("[data-supply-qty]").value);
-    const unitPrice = Number(row.querySelector("[data-supply-price]").value);
-    const supplyDate = row.querySelector("[data-supply-date]").value;
-    const note = row.querySelector("[data-supply-note]").value.trim();
-    if (![description, unit, row.querySelector("[data-supply-qty]").value, row.querySelector("[data-supply-price]").value, supplyDate].some(Boolean)) continue;
-    if (!description || !unit || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !supplyDate)
-      throw new Error("استكملي وصف ووحدة وكمية وسعر وتاريخ كل توريدة بدأتي إدخالها.");
-    result.push({ payload: { description, unit, qty, unitPrice, supplyDate, note: note || null }, row });
+async function loadSuppliesPage() {
+  const unitSelect = document.getElementById("supplyUnit");
+  if (!unitSelect) return;
+  try {
+    const catalog = await erpApi.supplyCatalog.list();
+    state.supplyCatalog = catalog || [];
+    renderSupplyCatalog();
+    const select = document.getElementById("supplyCatalogSelect");
+    const selectedId = select?.value;
+    if (select) select.innerHTML = '<option value="">اختر توريدة من السجل</option>' + state.supplyCatalog.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.type)} · ${escapeHtml(item.unit)}</option>`).join("");
+    if (selectedId && state.supplyCatalog.some(item => item.id === selectedId)) select.value = selectedId;
+    if (select?.value) await loadSupplyAssignmentDetail();
+  } catch (error) {
+    console.error("Could not load supply catalog", error);
+    document.getElementById("suppliesTableBody").innerHTML = `<tr><td colspan="7" class="sp-empty-cell">تعذر تحميل سجل التوريدات: ${escapeHtml(error.message || "")}</td></tr>`;
   }
-  return result;
+}
+
+let supplyCatalogPage = 1;
+
+function supplyCatalogMatchesQuery(item, query) {
+  return [item.type, item.unit, supplyStatusLabel(item.status), ...(item.projectNames || [])]
+    .join(" ").toLocaleLowerCase().includes(query);
+}
+
+function renderSupplyCatalog() {
+  const body = document.getElementById("suppliesTableBody");
+  if (!body) return;
+  const allRows = state.supplyCatalog || [];
+  const query = document.getElementById("supplyCatalogSearch")?.value.trim().toLocaleLowerCase() || "";
+  const rows = allRows.filter(item => supplyCatalogMatchesQuery(item, query));
+  const pageSize = Math.max(1, Number(document.getElementById("supplyCatalogPageSize")?.value) || 7);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  supplyCatalogPage = Math.min(Math.max(1, supplyCatalogPage), totalPages);
+  const visibleRows = rows.slice((supplyCatalogPage - 1) * pageSize, supplyCatalogPage * pageSize);
+  body.innerHTML = visibleRows.length ? visibleRows.map((item, index) => {
+    const names = item.projectNames || [];
+    const chips = names.slice(0, 2).map(name => `<span class="sp-chip">${escapeHtml(name)}</span>`).join("");
+    const extra = names.length > 2 ? `<span class="sp-chip sp-chip-more">+${names.length - 2}</span>` : "";
+    const statusActive = supplyStatusValue(item.status) === "Active";
+    return `<tr>
+      <td data-label="#" class="sp-row-number">${(supplyCatalogPage - 1) * pageSize + index + 1}</td>
+      <td data-label="نوع التوريدة"><span class="sp-item-name">${escapeHtml(item.type)}</span></td>
+      <td data-label="الوحدة"><span class="sp-unit">${escapeHtml(item.unit)}</span></td>
+      <td data-label="تاريخ الإضافة">${fmtDisplayDate(item.createdAt)}</td>
+      <td data-label="المشروعات المرتبطة"><div class="sp-chips">${chips}${extra || (!names.length ? '<span class="sp-muted-text">لا توجد مشروعات مرتبطة</span>' : "")}</div></td>
+      <td data-label="الحالة">
+        <label class="sp-status-toggle" title="تفعيل أو تعطيل التوريدة">
+          <input type="checkbox" class="sp-status-toggle-input" data-supply-status="${escapeHtml(item.id)}" ${statusActive ? "checked" : ""} aria-label="حالة التوريدة ${escapeHtml(item.type)}">
+          <span class="sp-status-toggle-track" aria-hidden="true"></span>
+          <span class="sp-status-toggle-text">${statusActive ? "مفعّلة" : "غير مفعّلة"}</span>
+        </label>
+      </td>
+      <td data-label="الإجراءات">
+        <div class="sp-row-actions">
+          <button type="button" class="sp-row-action" aria-label="ربط ${escapeHtml(item.type)} بمشروع" data-assign-supply="${escapeHtml(item.id)}">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <span>ربط بمشروع</span>
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="7" class="sp-empty-cell">${query ? "لا توجد توريدات مطابقة للبحث." : "لا توجد توريدات مسجلة حتى الآن. أضف توريدة من النموذج أعلاه."}</td></tr>`;
+
+  const linkedProjects = new Set();
+  allRows.forEach(item => (item.projectNames || []).forEach(name => linkedProjects.add(name)));
+  const grandTotal = document.getElementById("suppliesGrandTotal");
+  if (grandTotal) grandTotal.textContent = String(allRows.length);
+  const projectsTotal = document.getElementById("suppliesProjectsGrandTotal");
+  if (projectsTotal) projectsTotal.textContent = String(linkedProjects.size);
+  const countEl = document.getElementById("supplyCatalogCount");
+  if (countEl) countEl.textContent = rows.length === 1 ? "توريدة واحدة" : rows.length === 2 ? "توريدتان" : `${rows.length} توريدات`;
+  renderSupplyCatalogPagination(totalPages);
+  body.querySelectorAll("[data-assign-supply]").forEach(button => button.addEventListener("click", () => {
+    setSupplyWorkspaceTab("assign");
+    const select = document.getElementById("supplyCatalogSelect");
+    if (!select) return;
+    select.value = button.dataset.assignSupply;
+    loadSupplyAssignmentDetail();
+  }));
+  body.querySelectorAll("[data-supply-status]").forEach(input => input.addEventListener("change", () => {
+    toggleSupplyStatus(input.dataset.supplyStatus, input.checked);
+  }));
+}
+
+/**
+ * تبديل حالة توريدة (مفعّلة / غير مفعّلة) مباشرة من سجل التوريدات.
+ * يحفظ الحالة عبر الـ API ويحدّث السجل بال حالة المحفوظة فعليًا.
+ */
+async function toggleSupplyStatus(id, enabled) {
+  const item = (state.supplyCatalog || []).find((row) => String(row.id) === String(id));
+  if (!item) return;
+
+  const previousStatus = supplyStatusValue(item.status);
+  const nextStatus = enabled ? "Active" : "Inactive";
+  if (previousStatus === nextStatus) return;
+
+  const input = document.querySelector(`[data-supply-status="${CSS.escape(String(id))}"]`);
+  if (input) {
+    input.disabled = true;
+    input.setAttribute("aria-busy", "true");
+  }
+
+  try {
+    const result = await erpApi.supplyCatalog.updateStatus(item.id, nextStatus);
+    item.status = supplyStatusValue(result?.status || nextStatus);
+    refreshSupplyStatusRow(item, previousStatus);
+    focusSupplyStatusSwitch(item.id);
+    erpNotify.showToast(
+      `تم تحديث حالة التوريدة ${item.type || ""} إلى ${supplyStatusLabel(item.status)}.`,
+      "success",
+    );
+  } catch (error) {
+    // استرجاع الحالة السابقة عند فشل الحفظ
+    item.status = previousStatus;
+    refreshSupplyStatusRow(item, previousStatus);
+    focusSupplyStatusSwitch(item.id);
+    erpNotify.showToast(
+      "تعذر تحديث حالة التوريدة: " + (error.message || "حدث خطأ غير متوقع."),
+      "error",
+    );
+  }
+}
+
+function refreshSupplyStatusRow(item, previousStatus) {
+  const query = document.getElementById("supplyCatalogSearch")?.value.trim().toLocaleLowerCase() || "";
+  // Redraw only if the status change affects the filtered results and pagination.
+  if (supplyCatalogMatchesQuery({ ...item, status: previousStatus }, query) !== supplyCatalogMatchesQuery(item, query)) {
+    renderSupplyCatalog();
+    return;
+  }
+  const input = document.querySelector(`[data-supply-status="${CSS.escape(String(item.id))}"]`);
+  if (!input) return;
+  input.checked = supplyStatusValue(item.status) === "Active";
+  input.disabled = false;
+  input.removeAttribute("aria-busy");
+  const label = input.closest(".sp-status-toggle")?.querySelector(".sp-status-toggle-text");
+  if (label) label.textContent = supplyStatusLabel(item.status);
+}
+
+function focusSupplyStatusSwitch(id) {
+  const input = document.querySelector(
+    `[data-supply-status="${CSS.escape(String(id))}"]`,
+  );
+  input?.focus({ preventScroll: true });
+}
+
+function renderSupplyCatalogPagination(totalPages) {
+  const controls = document.getElementById("supplyCatalogPageControls");
+  if (!controls) return;
+  const first = Math.max(1, Math.min(supplyCatalogPage - 2, totalPages - 4));
+  const last = Math.min(totalPages, first + 4);
+  const pages = Array.from({ length: last - first + 1 }, (_, index) => first + index);
+  controls.innerHTML = `<button type="button" class="sp-page-btn" data-supply-page="${Math.max(1, supplyCatalogPage - 1)}" aria-label="الصفحة السابقة" ${supplyCatalogPage === 1 ? "disabled" : ""}>‹</button>${pages.map(page => `<button type="button" class="sp-page-btn${page === supplyCatalogPage ? " is-active" : ""}" data-supply-page="${page}" aria-current="${page === supplyCatalogPage ? "page" : "false"}">${page}</button>`).join("")}<button type="button" class="sp-page-btn" data-supply-page="${Math.min(totalPages, supplyCatalogPage + 1)}" aria-label="الصفحة التالية" ${supplyCatalogPage === totalPages ? "disabled" : ""}>›</button>`;
+}
+
+async function saveSupplyFromPage() {
+  if (!assertCan("projects", "create", "إضافة توريدة")) return;
+  const typeField = document.getElementById("supplyType");
+  const unitField = document.getElementById("supplyUnit");
+  const status = document.getElementById("supplyFormStatus");
+  const type = typeField?.value.trim();
+  const unit = unitField?.value;
+
+  typeField?.classList.remove("is-invalid");
+  unitField?.classList.remove("is-invalid");
+
+  if (!type || !unit) {
+    if (!type) typeField?.classList.add("is-invalid");
+    if (!unit) unitField?.classList.add("is-invalid");
+    if (status) {
+      status.textContent = "يرجى إدخال نوع التوريدة واختيار وحدة القياس.";
+      status.className = "sp-form-status is-error";
+    }
+    (!type ? typeField : unitField)?.focus();
+    return;
+  }
+
+  try {
+    await erpApi.supplyCatalog.create({ type, unit });
+    if (typeField) typeField.value = "";
+    if (unitField) unitField.value = "";
+    if (status) {
+      status.textContent = "تمت إضافة التوريدة إلى السجل بنجاح.";
+      status.className = "sp-form-status is-success";
+    }
+    await loadSuppliesPage();
+  } catch (error) {
+    if (status) {
+      status.textContent = "تعذر حفظ التوريدة: " + (error.message || "");
+      status.className = "sp-form-status is-error";
+    }
+  }
+}
+
+function setSupplyWorkspaceTab(tab) {
+  document.querySelectorAll("[data-supply-tab]").forEach(button => {
+    const active = button.dataset.supplyTab === tab;
+    button.classList.toggle("is-active", active);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll("[data-supply-panel]").forEach(panel => {
+    const active = panel.dataset.supplyPanel === tab;
+    panel.classList.toggle("is-active", active);
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+  if (tab === "assign" && typeof refreshSupplyProjectPool === "function") {
+    refreshSupplyProjectPool();
+  }
+  resetSupplyPageScroll();
+}
+
+function resetSupplyPageScroll() {
+  const contentArea = document.getElementById("content-area");
+  if (contentArea) contentArea.scrollTop = 0;
+  window.scrollTo(0, 0);
+}
+
+/* ==========================================================================
+   ربط التوريدات بالمشروعات
+   يعتمد على فلتر المشروعات الموجود أعلى الصفحة، بدون تكرار أدوات الفلترة.
+   ========================================================================== */
+
+function saState() {
+  return (saState.s ||= { currentId: "", drafts: new Map(), assignments: [], assignmentsError: "" });
+}
+
+const SA_ICONS = {
+  "box": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m4 7.5 8-4.5 8 4.5v9L12 21l-8-4.5z\"/><path d=\"m4 7.5 8 4.5 8-4.5M12 12v9M8 5.3l8 4.5\"/></svg>",
+  "link": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"6\" cy=\"17\" r=\"3\"/><circle cx=\"17\" cy=\"6\" r=\"3\"/><path d=\"m8 15 7-7\"/></svg>",
+  "building": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 21V4h11v17M16 10h4v11M3 21h19M8 8h1m3 0h1M8 12h1m3 0h1M8 16h1m3 0h1M9 21v-3h3v3\"/></svg>",
+  "document": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7\"/></svg>",
+  "wallet": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20 8H5a2 2 0 0 1 0-4h13v4M4 6v14h17V8M21 12h-6v5h6\"/><path d=\"M17 14.5h1\"/></svg>",
+  "list": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1\"/></svg>",
+  "save": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 3h13l4 4v14H3V3zM7 3v7h10V3M7 21v-7h10v7M13 4v4\"/></svg>",
+  "calendar": "<svg class=\"sp-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M7 3v4M17 3v4M3 11h18\"/></svg>"
+};
+
+function supplyTodayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function supplyStatusValue(value) {
+  return String(value || "").trim().toLowerCase() === "inactive" ? "Inactive" : "Active";
+}
+
+function supplyStatusLabel(value) {
+  return supplyStatusValue(value) === "Active" ? "مفعّلة" : "غير مفعّلة";
+}
+
+/**
+ * هل التوريدة غير مفعّلة؟
+ * القيمة الفارغة تعني أن التوريدة ليست مرتبطة بسجل التوريدات
+ * (توريدة مضافة يدويًا على المشروع) وليس لها حالة تعطيل.
+ * أي حالة محفوظة مختلفة عن "Active" تُعامل كغير مفعّلة.
+ */
+function supplyStatusIsDisabled(value) {
+  const status = String(value ?? "").trim().toLowerCase();
+  if (!status) return false;
+  return status !== "active";
+}
+
+function getCurrentSupplyItem() {
+  const id = document.getElementById("supplyCatalogSelect")?.value;
+  return (state.supplyCatalog || []).find((row) => row.id === id) || null;
+}
+
+function supplyOwnerName(project) {
+  return (state.owners || []).find((o) => o.id === project?.ownerId)?.name || "";
+}
+
+function supplyProjectsCountLabel(n) {
+  if (n === 0) return "0 مشروع";
+  if (n === 1) return "مشروع واحد";
+  if (n === 2) return "مشروعان";
+  return n <= 10 ? `${n} مشروعات` : `${n} مشروعًا`;
+}
+
+function supplyProjectsCountAccusative(n) {
+  if (n === 0) return "0 مشروع";
+  if (n === 1) return "مشروع واحد";
+  if (n === 2) return "مشروعين";
+  return n <= 10 ? `${n} مشروعات` : `${n} مشروعًا`;
+}
+
+function isSupplyDraftValid(d) {
+  const qty = Number(d.qty);
+  const price = Number(d.price);
+  return qty > 0 && d.price !== "" && Number.isFinite(price) && price >= 0 && !!d.date;
+}
+
+/* ---------- المشروعات المتاحة (محددة صراحة من فلتر المشروعات أعلى الصفحة) ---------- */
+function getSelectedSupplyProjectIds() {
+  return new Set((state.filters?.projectIds || []).map((id) => String(id)));
+}
+
+function getSupplyProjectPool() {
+  const selected = getSelectedSupplyProjectIds();
+  if (!selected.size) return [];
+  return (state.projects || []).filter((project) => selected.has(String(project.id)));
+}
+
+function getSupplyProjectCandidates() {
+  return getSupplyProjectPool().map((project) => ({ project, inFilter: true }));
+}
+
+/* الكميات الظاهرة فقط للمشروعات المحددة حاليًا؛ المسودات المخفية تبقى محفوظة في الذاكرة. */
+function getVisibleSupplyDraftEntries() {
+  const visibleIds = new Set(getSupplyProjectPool().map((project) => String(project.id)));
+  return [...saState().drafts.entries()].filter(([id]) => visibleIds.has(String(id)));
+}
+
+/* تُستدعى عند تغيير فلتر المشروعات أعلى الصفحة، وعند فتح تبويب الربط. */
+function refreshSupplyProjectPool() {
+  const item = getCurrentSupplyItem();
+  const pool = getSupplyProjectPool();
+  const selectedCount = getSelectedSupplyProjectIds().size;
+  const total = (state.projects || []).length;
+  const note = document.getElementById("saPoolNote");
+
+  if (note) {
+    if (!total) {
+      note.textContent = "لا توجد مشروعات مسجلة حتى الآن. أضف مشروعًا من صفحة المشروعات.";
+    } else if (!item) {
+      note.textContent = "اختر التوريدة أولًا، ثم حدد المشروعات التي استلمتها من فلتر المشروعات أعلى الصفحة.";
+    } else if (!selectedCount) {
+      note.textContent = "لم يتم تحديد أي مشروع. استخدم فلتر المشروعات أعلى الصفحة لعرض حقول الكميات للمشروعات المحددة فقط.";
+    } else if (selectedCount === total) {
+      note.textContent = `تم تحديد جميع المشروعات المسجلة (${total}).`;
+    } else {
+      note.textContent = `تعرض القائمة ${pool.length} مشروعًا من أصل ${total} وفق المشروعات المحددة في الفلتر أعلى الصفحة.`;
+    }
+  }
+
+  renderSupplyAllocations();
+  renderSupplyAssignmentHistory(item);
+}
+
+/* ---------- التهيئة ---------- */
+function initSupplyAssignmentsWorkspace() {
+  const host = document.getElementById("supplyProjectAllocations");
+  host?.addEventListener("input", onSupplyAllocationInput);
+  host?.addEventListener("change", onSupplyAllocationChange);
+  document.getElementById("btnSaClear")?.addEventListener("click", clearSupplySelection);
+  document.getElementById("btnSaQuickApply")?.addEventListener("click", applySupplyQuickFill);
+  document.getElementById("btnSaEditProjectFilter")?.addEventListener("click", revealProjectFilter);
+  document.getElementById("btnSaveSupplyAssignments")?.addEventListener("click", saveSupplyAssignments);
+
+  const quickDate = document.getElementById("saQuickDate");
+  if (quickDate && !quickDate.value) quickDate.value = supplyTodayISO();
+
+  refreshSupplyProjectPool();
+}
+
+function revealProjectFilter() {
+  const bar = document.getElementById("global-filters-bar");
+  const panel = document.getElementById("filtersPanelInner");
+  if (panel) panel.style.display = "";
+  const toggle = document.getElementById("btnToggleFilters");
+  if (toggle) toggle.setAttribute("aria-expanded", "true");
+  if (bar) {
+    bar.style.display = "";
+    bar.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  window.setTimeout(() => {
+    const projectSearch = document.getElementById("filterProjectName");
+    if (projectSearch) {
+      projectSearch.focus({ preventScroll: true });
+      projectSearch.select?.();
+      return;
+    }
+    document.getElementById("filterProject")?.focus({ preventScroll: true });
+  }, 220);
+}
+
+/* ---------- تفاعلات المشروعات ---------- */
+function onSupplyAllocationInput(event) {
+  const input = event.target.closest("[data-sa-field]");
+  const card = input?.closest("[data-project-id]");
+  if (!input || !card) return;
+  const draft = saState().drafts.get(card.dataset.projectId);
+  if (!draft) return;
+  draft[input.dataset.saField] = input.value;
+  draft.touched = true;
+  card.setAttribute("data-touched", "");
+  updateSupplyAssignmentTotal();
+}
+
+function onSupplyAllocationChange(event) {
+  const check = event.target.closest("[data-sa-check]");
+  if (!check) return;
+  const card = check.closest("[data-project-id]");
+  if (!card) return;
+
+  const S = saState();
+  const id = String(card.dataset.projectId);
+  if (check.checked) {
+    if (!S.drafts.has(id)) {
+      S.drafts.set(id, { qty: "", price: "", date: supplyTodayISO(), touched: false });
+    }
+  } else {
+    S.drafts.delete(id);
+  }
+  renderSupplyAllocations();
+}
+
+function clearSupplySelection() {
+  getVisibleSupplyDraftEntries().forEach(([id]) => saState().drafts.delete(id));
+  renderSupplyAllocations();
+}
+
+function applySupplyQuickFill() {
+  const qty = document.getElementById("saQuickQty")?.value ?? "";
+  const price = document.getElementById("saQuickPrice")?.value ?? "";
+  const date = document.getElementById("saQuickDate")?.value ?? "";
+  getVisibleSupplyDraftEntries().forEach(([, d]) => {
+    if (qty !== "") d.qty = qty;
+    if (price !== "") d.price = price;
+    if (date) d.date = date;
+    d.touched = true;
+  });
+  renderSupplyAllocations();
+}
+
+/* ---------- رسم المشروعات المحددة ---------- */
+function renderSupplyAllocations() {
+  const S = saState();
+  const host = document.getElementById("supplyProjectAllocations");
+  if (!host) return;
+  const item = getCurrentSupplyItem();
+
+  host.setAttribute("aria-busy", String(!!item && S.loadingId === item.id));
+  if (!item) {
+    host.innerHTML = '<div class="sp-empty"><strong>اختر توريدة لعرض المشروعات.</strong></div>';
+  } else if (S.loadingId === item.id) {
+    host.innerHTML = '<div class="sp-empty" role="status"><strong>جارٍ تحميل بيانات التوريدة…</strong></div>';
+  } else if (!(state.projects || []).length) {
+    host.innerHTML = '<div class="sp-empty"><strong>لا توجد مشروعات متاحة للربط.</strong></div>';
+  } else {
+    const candidates = getSupplyProjectCandidates();
+    if (!getSelectedSupplyProjectIds().size) {
+      host.innerHTML = '<div class="sp-empty"><strong>اختر المشروعات من فلتر المشروعات أعلى الصفحة.</strong></div>';
+    } else if (!candidates.length) {
+      host.innerHTML = '<div class="sp-empty"><strong>لا توجد مشروعات متاحة ضمن التحديد الحالي.</strong></div>';
+    } else {
+      host.innerHTML = `<div class="sp-allocation-head" aria-hidden="true"><span>المشروع</span><div><span>الكمية<small>${escapeHtml(item.unit)}</small></span><span>سعر الوحدة<small>جنيه</small></span><span>تاريخ التوريد</span><span>الإجمالي<small>جنيه</small></span></div></div>` + candidates
+        .map(({ project }, index) => {
+          const id = String(project.id);
+          const draft = S.drafts.get(id);
+          const selected = !!draft;
+          const name = project.name || "مشروع";
+          const owner = supplyOwnerName(project) || "بدون مالك مسجل";
+          return `<article class="sp-project-item${selected ? " is-selected" : ""}" data-project-id="${escapeHtml(id)}"${selected && draft.touched ? ' data-touched' : ""}>
+            <div class="sp-project-head">
+              <label class="sp-check" title="تحديد ${escapeHtml(name)}">
+                <input type="checkbox" data-sa-check${selected ? " checked" : ""} aria-label="تحديد ${escapeHtml(name)}">
+                <span aria-hidden="true"></span>
+              </label>
+              <span class="sp-project-symbol" aria-hidden="true">${SA_ICONS.building}</span>
+              <div class="sp-project-title">
+                <strong>${escapeHtml(name)}</strong>
+                <small>${escapeHtml(owner)}</small>
+              </div>
+            </div>
+            <div class="sp-project-fields">
+              <div class="sp-field" data-sa-wrap="qty">
+                <label for="sa-qty-${index}">الكمية</label>
+                <div class="sp-input has-unit">
+                  <input class="form-control" type="number" id="sa-qty-${index}" data-sa-field="qty" min="0" step="0.01" inputmode="decimal" placeholder="0.00" value="${selected ? escapeHtml(draft.qty) : ""}" ${selected ? "" : "disabled"}>
+                  <small>${escapeHtml(item.unit)}</small>
+                </div>
+              </div>
+              <div class="sp-field" data-sa-wrap="price">
+                <label for="sa-price-${index}">سعر الوحدة</label>
+                <div class="sp-input has-unit">
+                  <input class="form-control" type="number" id="sa-price-${index}" data-sa-field="price" min="0" step="0.01" inputmode="decimal" placeholder="0.00" value="${selected ? escapeHtml(draft.price) : ""}" ${selected ? "" : "disabled"}>
+                  <small>جنيه</small>
+                </div>
+              </div>
+              <div class="sp-field" data-sa-wrap="date">
+                <label for="sa-date-${index}">تاريخ التوريد</label>
+                <div class="sp-input">
+                  <input class="form-control" type="date" id="sa-date-${index}" data-sa-field="date" value="${selected ? escapeHtml(draft.date) : ""}" ${selected ? "" : "disabled"} lang="ar">
+                </div>
+              </div>
+              <div class="sp-field">
+                <label>الإجمالي</label>
+                <div class="sp-line-total"><strong><span data-sa-total>0.00</span> <small>جنيه</small></strong></div>
+              </div>
+            </div>
+          </article>`;
+        })
+        .join("");
+    }
+  }
+
+  const count = getVisibleSupplyDraftEntries().length;
+  const quick = document.getElementById("saQuickFill");
+  if (quick) quick.hidden = count < 2;
+  const clearBtn = document.getElementById("btnSaClear");
+  if (clearBtn) clearBtn.hidden = count === 0;
+
+  updateSupplyAssignmentTotal();
+}
+
+/* ---------- الإجماليات والتحقق وحالة زر الحفظ ---------- */
+function updateSupplyAssignmentTotal() {
+  const item = getCurrentSupplyItem();
+  const host = document.getElementById("supplyProjectAllocations");
+  const visibleDrafts = getVisibleSupplyDraftEntries();
+  const selectedProjects = getSelectedSupplyProjectIds().size;
+  let qtyTotal = 0;
+  let valueTotal = 0;
+  let invalid = false;
+
+  visibleDrafts.forEach(([id, d]) => {
+    const qty = Number(d.qty) || 0;
+    const price = Number(d.price) || 0;
+    qtyTotal += qty;
+    valueTotal += qty * price;
+    if (!isSupplyDraftValid(d)) invalid = true;
+
+    const card = host?.querySelector(`[data-project-id="${CSS.escape(id)}"]`);
+    if (!card) return;
+    const totalEl = card.querySelector("[data-sa-total]");
+    if (totalEl) totalEl.textContent = fmtNum(qty * price);
+    card.querySelector('[data-sa-wrap="qty"]')?.classList.toggle("is-invalid", !(qty > 0));
+    card.querySelector('[data-sa-wrap="price"]')?.classList.toggle("is-invalid", d.price === "" || price < 0);
+    card.querySelector('[data-sa-wrap="date"]')?.classList.toggle("is-invalid", !d.date);
+  });
+
+  const count = visibleDrafts.length;
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set("supplyAssignmentQtyTotal", fmtNum(qtyTotal));
+  set("supplyAssignmentValueTotal", fmtNum(valueTotal));
+  set("supplyAssignmentCount", String(count));
+  set("supplyAssignmentUnit", item?.unit || "");
+  set("saSelectedCount", supplyProjectsCountLabel(count));
+  set(
+    "supplyAssignmentValidation",
+    !item
+      ? ""
+      : !selectedProjects
+        ? "اختر مشروعًا واحدًا أو أكثر من فلتر المشروعات أعلى الصفحة."
+        : invalid
+          ? "أدخل كمية أكبر من صفر، وسعر الوحدة، وتاريخ التوريد لكل مشروع محدد."
+          : count
+            ? ""
+            : "حدد مشروعًا واحدًا على الأقل من المشروعات الظاهرة.",
+  );
+
+  const save = document.getElementById("btnSaveSupplyAssignments");
+  if (save) save.disabled = !item || saState().loadingId === item?.id || !selectedProjects || !count || invalid;
+}
+
+function renderSupplyAssignmentHistory(item) {
+  const history = document.getElementById("supplyAssignmentsHistory");
+  if (!history) return;
+
+  if (!item) {
+    history.innerHTML =
+      '<div class="sp-empty"><strong>لم يتم اختيار توريدة بعد</strong><span>اختر توريدة لعرض المشروعات المرتبطة بها.</span></div>';
+    return;
+  }
+
+  const S = saState();
+  if (S.assignmentsError) {
+    history.innerHTML = `<div class="sp-empty"><strong>تعذر تحميل المشروعات المرتبطة</strong><span>${escapeHtml(S.assignmentsError)}</span></div>`;
+    return;
+  }
+
+  const assignments = S.assignments || [];
+  const selectedProjectIds = getSelectedSupplyProjectIds();
+  const visibleAssignments = selectedProjectIds.size
+    ? assignments.filter((row) => selectedProjectIds.has(String(row.projectId)))
+    : [];
+  if (!selectedProjectIds.size) {
+    history.innerHTML =
+      '<div class="sp-empty"><strong>لم يتم تحديد مشروعات</strong><span>اختر مشروعات من فلتر المشروعات أعلى الصفحة لعرض التوزيعات المرتبطة بها.</span></div>';
+  } else if (visibleAssignments.length) {
+    history.innerHTML = visibleAssignments
+      .map(
+        (row) =>
+          `<article class="sp-history-row"><span class="sp-history-avatar" aria-hidden="true">${SA_ICONS.building}</span><span class="sp-history-info"><strong>${escapeHtml(row.projectName)}</strong><b>${fmtNum(row.qty)} ${escapeHtml(item.unit)}</b><small>${SA_ICONS.calendar}<span dir="ltr">${fmtDisplayDate(row.supplyDate || row.createdAt)}</span></small></span></article>`,
+      )
+      .join("");
+  } else if (assignments.length) {
+    history.innerHTML =
+      '<div class="sp-empty"><strong>لا توجد مشروعات مرتبطة ضمن التحديد</strong><span>التوزيعات المحفوظة لهذه التوريدة تخص مشروعات خارج المشروعات المحددة حاليًا، وتبقى محفوظة كما هي.</span></div>';
+  } else {
+    history.innerHTML =
+      '<div class="sp-empty"><strong>لا توجد مشروعات مرتبطة</strong><span>لم يتم ربط هذه التوريدة بأي مشروع بعد.</span></div>';
+  }
+}
+
+/* ---------- تحميل تفاصيل التوريدة المختارة ---------- */
+async function loadSupplyAssignmentDetail() {
+  const S = saState();
+  const id = document.getElementById("supplyCatalogSelect")?.value || "";
+  const item = getCurrentSupplyItem();
+  const summary = document.getElementById("supplyAssignmentSummary");
+  const loadToken = (S.detailLoadToken || 0) + 1;
+  S.detailLoadToken = loadToken;
+  S.loadingId = item ? id : "";
+
+  // تغيير التوريدة = نبدأ اختيار مشروعات جديد (نفس التوريدة = نحافظ على اللي اتكتب)
+  if (id !== S.currentId) {
+    S.currentId = id;
+    S.drafts.clear();
+    S.assignments = [];
+    S.assignmentsError = "";
+  }
+  refreshSupplyProjectPool();
+
+  if (!item) {
+    if (summary) {
+      summary.className = "sp-summary is-empty";
+      summary.innerHTML =
+        '<span class="sp-summary-mark" aria-hidden="true">i</span><span>اختر توريدة من القائمة لعرض إجمالي الكمية الموردة والمسحوبة.</span>';
+    }
+    return;
+  }
+
+  let assignments = [];
+  S.assignmentsError = "";
+  try {
+    assignments = await erpApi.supplyCatalog.assignments(id);
+  } catch (error) {
+    S.assignments = [];
+    S.assignmentsError = error.message || "حدث خطأ غير متوقع.";
+  }
+  if (S.detailLoadToken !== loadToken || document.getElementById("supplyCatalogSelect")?.value !== id) return;
+  S.loadingId = "";
+  S.assignments = assignments;
+  renderSupplyAllocations();
+
+  const linkedSupplyItemIds = new Set(assignments.map((row) => row.projectSupplyItemId));
+  const suppliedQty = assignments.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+  const withdrawnQty = (state.invoices || []).reduce(
+    (sum, invoice) =>
+      sum +
+      (invoice.deductions || []).reduce(
+        (deductionSum, deduction) =>
+          deductionSum +
+          (deduction.calcFromKeys || []).reduce((keySum, key) => {
+            const selection = parseSupplyDeductionKey(key);
+            return keySum + (selection && linkedSupplyItemIds.has(selection.projectSupplyItemId) ? selection.qty : 0);
+          }, 0),
+        0,
+      ),
+    0,
+  );
+
+  if (summary) {
+    summary.className = "sp-summary";
+    summary.innerHTML = `<span class="sp-summary-metric"><span class="sp-metric-icon">${SA_ICONS.box}</span><small>إجمالي الكمية الموردة</small><strong>${fmtNum(suppliedQty)} <small>${escapeHtml(item.unit)}</small></strong></span><span class="sp-summary-metric"><span class="sp-metric-icon">${SA_ICONS.document}</span><small>إجمالي المسحوب في المستخلصات</small><strong>${fmtNum(withdrawnQty)} <small>${escapeHtml(item.unit)}</small></strong></span>`;
+  }
+
+  renderSupplyAssignmentHistory(item);
+}
+
+/* ---------- الحفظ ---------- */
+async function saveSupplyAssignments() {
+  if (!assertCan("projects", "create", "توزيع التوريدة على المشروعات")) return;
+  const S = saState();
+  const supplyId = document.getElementById("supplyCatalogSelect")?.value;
+  const drafts = getVisibleSupplyDraftEntries();
+  if (!supplyId || !drafts.length || drafts.some(([, d]) => !isSupplyDraftValid(d))) return;
+
+  const assignments = drafts.map(([projectId, d]) => ({
+    projectId,
+    qty: Number(d.qty),
+    unitPrice: Number(d.price),
+    supplyDate: d.date,
+  }));
+
+  const button = document.getElementById("btnSaveSupplyAssignments");
+  button.disabled = true;
+  button.textContent = "جارٍ حفظ الربط…";
+  try {
+    await erpApi.supplyCatalog.assign(supplyId, assignments);
+    drafts.forEach(([projectId]) => S.drafts.delete(projectId));
+    await loadSuppliesPage();
+    document.getElementById("supplyCatalogSelect").value = supplyId;
+    await loadSupplyAssignmentDetail();
+    document.getElementById("supplyAssignmentValidation").textContent = "تم ربط التوريدة بالمشروعات وحفظ البيانات.";
+  } catch (error) {
+    updateSupplyAssignmentTotal();
+    document.getElementById("supplyAssignmentValidation").textContent = error.message || "تعذر حفظ توزيع التوريدة.";
+  } finally {
+    button.textContent = "حفظ ربط التوريدة";
+  }
 }
 
 function openProjectModal() {
@@ -7021,8 +7698,6 @@ function openProjectModal() {
   document.getElementById("projectName").value = "";
   setInputDate("projectStartDate", getTodayLocal());
   document.getElementById("projectStatus").value = "Active";
-  document.getElementById("projectSupplyRows").innerHTML = "";
-  updateProjectSupplyTotal();
   setSectorManagerCombobox(null);
   document.getElementById("lblProjectModal").innerText = "إضافة مشروع جديد";
   document.getElementById("modalProject").classList.add("active");
@@ -7040,18 +7715,6 @@ function editProject(id) {
   setInputDate("projectStartDate", p.startDate);
   document.getElementById("projectStatus").value = p.status || "Active";
   setSectorManagerCombobox(p.sectorManagerId || null);
-  document.getElementById("projectSupplyRows").innerHTML = "";
-  updateProjectSupplyTotal();
-  erpApi.projects.supplyItems(id).then(items => {
-    const host = document.getElementById("projectSupplyRows");
-    if (!host || document.getElementById("projectId").value !== id) return;
-    items.forEach(item => {
-      const row = document.createElement("div");
-      row.className = "project-existing-supply";
-      row.innerHTML = `<span><strong>${escapeHtml(item.description)}</strong><small>${fmtNum(item.qty)} ${escapeHtml(item.unit)} × ${fmtNum(item.unitPrice)} = ${fmtNum(item.total)}</small><small>المتاح: ${fmtNum(item.availableQty)} ${escapeHtml(item.unit)}</small></span>`;
-      host.appendChild(row);
-    });
-  }).catch(error => console.warn("Could not load project supplies", error));
   document.getElementById("lblProjectModal").innerText = "تعديل بيانات المشروع";
   document.getElementById("modalProject").classList.add("active");
   initFlatpickr();
@@ -7079,10 +7742,6 @@ async function saveProject() {
     return;
   }
 
-  let supplies;
-  try { supplies = collectProjectSupplyRows(); }
-  catch (error) { alert(error.message); return; }
-
   const dto = {
     id: id || null,
     ownerId,
@@ -7100,12 +7759,6 @@ async function saveProject() {
       const created = await erpApi.projects.create(dto);
       savedProjectId = created?.id || created?.Id;
       if (savedProjectId) document.getElementById("projectId").value = savedProjectId;
-    }
-    if (supplies.length && !savedProjectId) throw new Error("تم حفظ المشروع لكن تعذر تحديد رقمه لحفظ التوريدات.");
-    for (let index = 0; index < supplies.length; index++) {
-      await erpApi.projects.addSupplyItem(savedProjectId, supplies[index].payload);
-      supplies[index].row.remove();
-      updateProjectSupplyTotal();
     }
     await syncStateFromBackend();
   } catch (error) {
@@ -7318,7 +7971,7 @@ async function assignContractSupplies() {
   const contractId = document.getElementById("contractId")?.value;
   if (!contractId) return;
   const selected = [...document.querySelectorAll("[data-supply-choice]:checked")];
-  if (!selected.length) { alert("اختاري توريدة واحدة على الأقل."); return; }
+  if (!selected.length) { alert("اختر توريدة واحدة على الأقل."); return; }
   for (const checkbox of selected) {
     const qty = Number(checkbox.closest(".contract-supply-row")?.querySelector("[data-allocation-qty]")?.value);
     const item = activeContractSupplyItems.find(x => x.id === checkbox.dataset.id);
@@ -7811,7 +8464,10 @@ function calcInvoiceTotals() {
         currentComponents: currentComps,
       });
       let amt = 0;
-      if (type === "percent") {
+      const isMaterialsDeduction = card.querySelector(".ded-desc")?.selectedOptions?.[0]?.textContent.trim() === "خصم خامات";
+      if (isMaterialsDeduction) {
+        amt = getDeductionMaterialsAmount(card);
+      } else if (type === "percent") {
         amt = base * (val / 100);
       } else {
         amt = val;
@@ -8087,7 +8743,9 @@ function addInvDeductionRow(data = null) {
   const card = document.createElement("div");
   card.className = "deduction-card";
   card.setAttribute("data-ded-index", cardIndex);
+  card.dataset.materialsUid = generateId(10);
   if (data && data.id) card.setAttribute("data-ded-id", data.id);
+  if (data?.calcFromKeys) card.dataset.supplySelections = JSON.stringify(data.calcFromKeys.map(parseSupplyDeductionKey).filter(Boolean));
   card.innerHTML = `
         <div class="deduction-card-header">
             <span class="deduction-card-number">📦 استقطاع #${cardIndex}</span>
@@ -8101,14 +8759,14 @@ function addInvDeductionRow(data = null) {
                     ${libInfo.library.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === libInfo.selectedId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}
                 </select>
             </div>
-            <div class="form-group">
+            <div class="form-group deduction-calc-type-group">
                 <label>النوع</label>
                 <select class="form-select ded-type">
                     <option value="percent" ${isPercent ? "selected" : ""}>نسبة %</option>
                     <option value="fixed" ${!isPercent ? "selected" : ""}>مبلغ ثابت</option>
                 </select>
             </div>
-            <div class="form-group span-full">
+            <div class="form-group span-full deduction-base-group">
                 <label>الحساب الأساسي (البنود المطلوب الحساب منها)</label>
                 <div class="ms-wrapper">
                     <button type="button" class="ms-btn">اختر البنود (<span class="ms-count">${selKeys.length}</span>)</button>
@@ -8132,11 +8790,26 @@ function addInvDeductionRow(data = null) {
                     </div>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group span-full ded-materials-panel" hidden>
+                <div class="ded-materials-shell">
+                    <div class="ded-materials-head">
+                        <div class="ded-materials-head-text">
+                            <small class="ded-materials-project"></small>
+                        </div>
+                    </div>
+                    <div class="ded-materials-body">
+                        <div class="ded-materials-list" role="list"></div>
+                        <nav class="ded-materials-pagination" aria-label="صفحات توريدات المشروع" hidden></nav>
+                        <div class="ded-materials-summary" aria-live="polite"></div>
+                    </div>
+                    <div class="ded-materials-empty" hidden></div>
+                </div>
+            </div>
+            <div class="form-group deduction-manual-value-group">
                 <label>القيمة <span class="ded-val-label">(${isPercent ? "%" : "مبلغ ثابت"})</span></label>
                 <input type="number" step="any" class="form-control ded-val" value="${data ? (data.val !== undefined ? data.val : data.amount) || 0 : 0}">
             </div>
-            <div class="form-group">
+            <div class="form-group deduction-calculated-group">
                 <label>المبلغ المحسوب</label>
                 <div class="deduction-calculated-amount ded-amount">0.00</div>
             </div>
@@ -8170,6 +8843,7 @@ function addInvDeductionRow(data = null) {
       label.textContent = e.target.value === "percent" ? "%" : "مبلغ ثابت";
     calcInvoiceTotals();
   });
+  card.querySelector(".ded-desc").addEventListener("change", () => loadDeductionMaterials(card));
 
   // Bind refund toggle label
   card.querySelector(".ded-refund").addEventListener("change", (e) => {
@@ -8185,7 +8859,573 @@ function addInvDeductionRow(data = null) {
   card
     .querySelectorAll("input, select")
     .forEach((inp) => inp.addEventListener("input", calcInvoiceTotals));
+  if (card.querySelector(".ded-desc")?.selectedOptions?.[0]?.textContent.trim() === "خصم خامات") loadDeductionMaterials(card);
   calcInvoiceTotals();
+}
+
+function roundMaterialQuantity(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function formatMaterialQuantity(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  return number.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
+function getDeductionMaterialsProject() {
+  const projectId = document.getElementById("invProjectId")?.value || "";
+  const contractId = document.getElementById("invContractId")?.value || "";
+  const contract = (state.contracts || []).find((item) => item.id === contractId) || null;
+  const project =
+    (state.projects || []).find((item) => item.id === projectId) ||
+    (state.projects || []).find((item) => item.id === contract?.projectId) ||
+    null;
+  return {
+    projectId: project?.id || contract?.projectId || projectId,
+    project,
+    contract,
+  };
+}
+
+function setDeductionMaterialsContentVisible(card, visible) {
+  const body = card.querySelector(".ded-materials-body");
+  const empty = card.querySelector(".ded-materials-empty");
+  if (body) body.hidden = !visible;
+  if (empty && visible) empty.hidden = true;
+}
+
+function showDeductionMaterialsEmpty(card, message, { error = false, loading = false } = {}) {
+  const list = card.querySelector(".ded-materials-list");
+  const summary = card.querySelector(".ded-materials-summary");
+  const empty = card.querySelector(".ded-materials-empty");
+  const body = card.querySelector(".ded-materials-body");
+  if (list) list.innerHTML = "";
+  const pagination = card.querySelector(".ded-materials-pagination");
+  if (pagination) pagination.hidden = true;
+  if (summary) summary.innerHTML = "";
+  if (body) body.hidden = true;
+  if (empty) {
+    empty.hidden = false;
+    empty.className = `ded-materials-empty${error ? " is-error" : ""}${loading ? " is-loading" : ""}`;
+    empty.innerHTML = `<span class="ded-materials-empty-mark" aria-hidden="true">${loading ? "…" : "i"}</span><span>${escapeHtml(message)}</span>`;
+  }
+  card.querySelectorAll(".ded-material-qty").forEach((input) => setDeductionMaterialError(input, ""));
+}
+
+function getDeductionMaterialSelections(card) {
+  const selections = new Map();
+  try {
+    const saved = JSON.parse(card.dataset.supplySelections || "[]");
+    (Array.isArray(saved) ? saved : []).forEach((selection) => {
+      if (selection?.projectSupplyItemId) {
+        selections.set(selection.projectSupplyItemId, Number(selection.qty) || 0);
+      }
+    });
+  } catch {
+    // Ignore malformed legacy selections.
+  }
+  card.querySelectorAll(".ded-material-row").forEach((row) => {
+    const check = row.querySelector(".ded-material-select");
+    const input = row.querySelector(".ded-material-qty");
+    const supplyId = check?.dataset.supplyId;
+    if (!supplyId) return;
+    if (check.checked) selections.set(supplyId, Number(input?.value) || 0);
+    else selections.delete(supplyId);
+  });
+  return selections;
+}
+
+function paginateDeductionMaterials(card) {
+  const matches = [...card.querySelectorAll(".ded-materials-list .ded-material-row")];
+  const pages = Math.max(1, Math.ceil(matches.length / 3));
+  const page = Math.min(pages, Math.max(1, Number(card.dataset.materialsPage) || 1));
+  card.dataset.materialsPage = String(page);
+  const visible = new Set(matches.slice((page - 1) * 3, page * 3));
+  matches.forEach((row) => { row.hidden = !visible.has(row); });
+  const pagination = card.querySelector(".ded-materials-pagination");
+  if (pagination) {
+    pagination.hidden = matches.length <= 3;
+    pagination.innerHTML = `<button type="button" data-material-page="${page - 1}" ${page === 1 ? "disabled" : ""}>السابق</button><span role="status" aria-live="polite">${page} من ${pages}</span><button type="button" data-material-page="${page + 1}" ${page === pages ? "disabled" : ""}>التالي</button>`;
+    pagination.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+      card.dataset.materialsPage = button.dataset.materialPage;
+      paginateDeductionMaterials(card);
+      // Keep keyboard focus on navigation after its controls are refreshed.
+      const direction = Number(button.dataset.materialPage) > page ? "last-child" : "first-child";
+      pagination.querySelector(`button:${direction}:not(:disabled)`)?.focus();
+    }));
+  }
+}
+
+function refreshDeductionMaterialsSummary(card) {
+  const summary = card.querySelector(".ded-materials-summary");
+  const selectedRows = [...card.querySelectorAll(".ded-material-row")].filter(
+    (row) => row.querySelector(".ded-material-select")?.checked,
+  );
+  if (!summary) return;
+
+  if (!selectedRows.length) {
+    summary.innerHTML = "";
+    return;
+  }
+
+  const rows = selectedRows
+    .map((row) => {
+      const input = row.querySelector(".ded-material-qty");
+      const name = row.querySelector(".ded-material-main strong")?.textContent?.trim() || "";
+      const unit = input?.dataset.unit || "";
+      const rawValue = String(input?.value ?? "").trim();
+      const qty = Number(rawValue);
+      const hasQuantity = rawValue !== "" && Number.isFinite(qty);
+      const unitPrice = Math.round(((Number(input?.dataset.price) || 0) + Number.EPSILON) * 100) / 100;
+      const total = hasQuantity
+        ? Math.round(((Math.round(qty * 100) / 100) * unitPrice + Number.EPSILON) * 100) / 100
+        : null;
+      return `
+        <tr>
+          <td><span class="ded-materials-summary-name">${escapeHtml(name)}</span></td>
+          <td class="ded-materials-summary-number"><span class="ded-materials-summary-value"><b dir="ltr">${fmtNum(unitPrice)}</b><small>جنيه</small></span></td>
+          <td class="ded-materials-summary-number">${hasQuantity ? `<span class="ded-materials-summary-value"><b dir="ltr">${formatMaterialQuantity(qty)}</b><small>${escapeHtml(unit)}</small></span>` : '<span class="ded-materials-summary-muted">لم تُحدد</span>'}</td>
+          <td class="ded-materials-summary-number">${total !== null ? `<span class="ded-materials-summary-value"><b dir="ltr">${fmtNum(total)}</b><small>جنيه</small></span>` : '<span class="ded-materials-summary-muted">—</span>'}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  summary.innerHTML = `
+    <div class="ded-materials-summary-head"><strong>ملخص الخامات المختارة</strong></div>
+    <div class="ded-materials-summary-table-wrap">
+      <table class="ded-materials-summary-table" aria-label="ملخص الخامات المختارة">
+        <colgroup><col style="width:34%"><col style="width:22%"><col style="width:22%"><col style="width:22%"></colgroup>
+        <thead><tr><th scope="col">اسم التوريدة</th><th scope="col">سعر الوحدة</th><th scope="col">الكمية المختارة</th><th scope="col">الإجمالي</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function setDeductionMaterialError(input, message) {
+  if (!input) return;
+  const row = input.closest(".ded-material-row");
+  const error = row?.querySelector(".ded-material-error");
+  if (message) {
+    if (error) {
+      error.textContent = message;
+      error.hidden = false;
+    }
+    input.classList.add("is-invalid");
+    input.setAttribute("aria-invalid", "true");
+    row?.classList.add("has-error");
+  } else {
+    if (error) {
+      error.textContent = "";
+      error.hidden = true;
+    }
+    input.classList.remove("is-invalid");
+    input.removeAttribute("aria-invalid");
+    row?.classList.remove("has-error");
+  }
+}
+
+function validateAllDeductionMaterials({ showEmpty = false } = {}) {
+  let valid = true;
+  const cards = [
+    ...document.querySelectorAll(
+      "#deductionCardsContainer .deduction-card.is-materials-deduction",
+    ),
+  ];
+  const totals = new Map();
+
+  cards.forEach((card) => {
+    card.querySelectorAll(".ded-material-qty").forEach((input) => {
+      setDeductionMaterialError(input, "");
+    });
+  });
+
+  cards.forEach((card) => {
+    card.querySelectorAll(".ded-material-row").forEach((row) => {
+      const check = row.querySelector(".ded-material-select");
+      const input = row.querySelector(".ded-material-qty");
+      if (!check?.checked || !input) return;
+
+      const rawValue = String(input.value ?? "").trim();
+      if (row.classList.contains("is-disabled")) {
+        setDeductionMaterialError(
+          input,
+          "هذه التوريدة غير متاحة للخصم حاليًا. يجب إزالتها من الاستقطاع أو تفعيلها من سجل التوريدات قبل الحفظ.",
+        );
+        valid = false;
+        return;
+      }
+      if (input.disabled) return;
+      if (rawValue === "") {
+        if (showEmpty) {
+          setDeductionMaterialError(input, "أدخل الكمية المطلوب خصمها.");
+          valid = false;
+        }
+        return;
+      }
+
+      const qty = Number(rawValue);
+      const max = Number(input.dataset.supplyMax);
+      if (!Number.isFinite(qty) || !Number.isFinite(max)) {
+        setDeductionMaterialError(input, "أدخل كمية صحيحة.");
+        valid = false;
+        return;
+      }
+      if (qty <= 0) {
+        setDeductionMaterialError(input, "يجب أن تكون الكمية أكبر من صفر.");
+        valid = false;
+        return;
+      }
+      if (qty > max + 1e-9) {
+        setDeductionMaterialError(
+          input,
+          `الكمية المسموحة هي ${formatMaterialQuantity(max)} فقط.`,
+        );
+        valid = false;
+        return;
+      }
+
+      const supplyId = check.dataset.supplyId;
+      if (!supplyId) return;
+      const total = totals.get(supplyId) || { qty: 0, max, inputs: [] };
+      total.qty += qty;
+      total.max = Math.min(total.max, max);
+      total.inputs.push(input);
+      totals.set(supplyId, total);
+    });
+  });
+
+  totals.forEach((total) => {
+    if (total.qty <= total.max + 1e-9) return;
+    valid = false;
+    total.inputs.forEach((input) => {
+      if (input.classList.contains("is-invalid")) return;
+      setDeductionMaterialError(
+        input,
+        `إجمالي الكمية المختارة يتجاوز الكمية المسموحة (${formatMaterialQuantity(total.max)} فقط).`,
+      );
+    });
+  });
+
+  return valid;
+}
+
+function focusFirstDeductionMaterialError() {
+  const tab = document.querySelector(
+    '#modalInvoice .tab-item[data-tab="tabInvDeductions"]',
+  );
+  if (tab && !tab.classList.contains("active")) tab.click();
+  const input = document.querySelector(
+    "#deductionCardsContainer .ded-material-qty.is-invalid",
+  );
+  if (!input) return;
+  const row = input.closest(".ded-material-row");
+  const card = input.closest(".deduction-card");
+  if (row?.hidden && card) {
+    const rows = [...card.querySelectorAll(".ded-materials-list .ded-material-row")];
+    card.dataset.materialsPage = String(Math.floor(rows.indexOf(row) / 3) + 1);
+    paginateDeductionMaterials(card);
+  }
+  const target = input.disabled
+    ? row?.querySelector(".ded-material-remove") || row?.querySelector(".ded-material-select") || input
+    : input;
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+async function revalidateMaterialsBeforeSave() {
+  const cards = [
+    ...document.querySelectorAll(
+      "#deductionCardsContainer .deduction-card.is-materials-deduction",
+    ),
+  ];
+  if (!cards.length) return true;
+
+  await Promise.all(cards.map((card) => loadDeductionMaterials(card)));
+  if (cards.some((card) => card.dataset.materialsLoadError === "1")) {
+    alert("تعذر التحقق من كميات الخامات من بيانات المشروع. حاول مرة أخرى.");
+    return false;
+  }
+  if (!validateAllDeductionMaterials({ showEmpty: true })) {
+    focusFirstDeductionMaterialError();
+    return false;
+  }
+  return true;
+}
+
+async function loadDeductionMaterials(card) {
+  const panel = card.querySelector(".ded-materials-panel");
+  const list = card.querySelector(".ded-materials-list");
+  const name = card
+    .querySelector(".ded-desc")
+    ?.selectedOptions?.[0]?.textContent.trim();
+  if (!panel || !list) return;
+  const loadToken = (card._materialsLoadToken || 0) + 1;
+  card._materialsLoadToken = loadToken;
+  const isMaterials = name === "خصم خامات";
+  panel.hidden = !isMaterials;
+  card.classList.toggle("is-materials-deduction", isMaterials);
+  [
+    ".deduction-calc-type-group",
+    ".deduction-base-group",
+    ".deduction-manual-value-group",
+  ].forEach((selector) => {
+    const field = card.querySelector(selector);
+    if (!field) return;
+    if (isMaterials) field.style.setProperty("display", "none", "important");
+    else field.style.removeProperty("display");
+  });
+  if (!isMaterials) {
+    delete card.dataset.materialsLoadError;
+    list.innerHTML = "";
+    const summary = card.querySelector(".ded-materials-summary");
+    if (summary) summary.innerHTML = "";
+    calcInvoiceTotals();
+    return;
+  }
+
+  delete card.dataset.materialsLoadError;
+
+  const projectLabel = card.querySelector(".ded-materials-project");
+  const projectInfo = getDeductionMaterialsProject();
+  if (projectLabel) {
+    projectLabel.innerHTML = projectInfo.project
+      ? `المشروع: <strong>${escapeHtml(projectInfo.project.name || projectInfo.project.id)}</strong>`
+      : "";
+  }
+
+  if (!(state.projects || []).length) {
+    showDeductionMaterialsEmpty(
+      card,
+      "لا توجد مشروعات متاحة.",
+    );
+    calcInvoiceTotals();
+    return;
+  }
+
+  if (!projectInfo.projectId) {
+    showDeductionMaterialsEmpty(
+      card,
+      "اختر مشروعًا لعرض التوريدات.",
+    );
+    calcInvoiceTotals();
+    return;
+  }
+
+  const loadingProjectName =
+    projectInfo.project?.name || projectInfo.projectId || "";
+  const projectPlaceholder = card.querySelector(".ded-materials-project");
+  if (projectPlaceholder && loadingProjectName) {
+    projectPlaceholder.innerHTML = `المشروع: <strong>${escapeHtml(loadingProjectName)}</strong>`;
+  }
+  // Capture the current selection BEFORE the list is re-rendered, otherwise the
+  // in-progress quantities would be lost on every refresh.
+  const projectChanged = card.dataset.materialsProjectId && card.dataset.materialsProjectId !== projectInfo.projectId;
+  const savedBySupply = projectChanged ? new Map() : getDeductionMaterialSelections(card);
+  card.dataset.materialsProjectId = projectInfo.projectId;
+  card.dataset.supplySelections = JSON.stringify([...savedBySupply].map(([projectSupplyItemId, qty]) => ({ projectSupplyItemId, qty })));
+  card.dataset.materialsPage = "1";
+  showDeductionMaterialsEmpty(card, "جارٍ تحميل التوريدات والكميات…", {
+    loading: true,
+  });
+
+  try {
+    const projectSupplies = await getProjectSupplyItems(projectInfo.projectId);
+    if (card._materialsLoadToken !== loadToken) return;
+    if (!Array.isArray(projectSupplies)) throw new Error("بيانات التوريدات غير صحيحة.");
+
+    const invoiceId = document.getElementById("invoiceId")?.value;
+    const usedElsewhere = new Map();
+    (state.invoices || []).forEach((invoice) => {
+      if (invoice.id === invoiceId) return;
+      const invoiceContract = (state.contracts || []).find(
+        (item) => item.id === invoice.contractId,
+      );
+      if (invoiceContract?.projectId !== projectInfo.projectId) return;
+      (invoice.deductions || []).forEach((deduction) => {
+        (deduction.calcFromKeys || [])
+          .map(parseSupplyDeductionKey)
+          .filter(Boolean)
+          .forEach((selection) => {
+            usedElsewhere.set(
+              selection.projectSupplyItemId,
+              (usedElsewhere.get(selection.projectSupplyItemId) || 0) +
+                selection.qty,
+            );
+          });
+      });
+    });
+
+    const today = new Date();
+    const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const dueProjectSupplies = projectSupplies.filter(
+      (item) =>
+        !item.supplyDate || String(item.supplyDate).slice(0, 10) <= todayDate,
+    );
+    // Inactive supplies are excluded from both new and restored draft selections.
+    const isActive = (item) => String(item.supplyStatus || "").trim().toLowerCase() === "active";
+    const activeIds = new Set(projectSupplies.filter(isActive).map((item) => item.id));
+    for (const id of savedBySupply.keys()) {
+      if (!activeIds.has(id)) savedBySupply.delete(id);
+    }
+    card.dataset.supplySelections = JSON.stringify([...savedBySupply].map(([projectSupplyItemId, qty]) => ({ projectSupplyItemId, qty })));
+    const supplies = dueProjectSupplies
+      .map((item) => ({
+        ...item,
+        disabled: false,
+        available: roundMaterialQuantity(
+          Math.max(0, Number(item.qty) - (usedElsewhere.get(item.id) || 0)),
+        ),
+      }))
+      .filter(
+        (item) =>
+          isActive(item) && (item.available > 0 || savedBySupply.has(item.id)),
+      );
+
+    if (!supplies.length) {
+      const message = !projectSupplies.some(isActive)
+        ? "لا توجد توريدات مفعّلة مرتبطة بهذا المشروع."
+        : !dueProjectSupplies.some(isActive)
+          ? "لا توجد توريدات مستحقة للخصم حتى تاريخ اليوم."
+          : "لا توجد كميات متاحة من توريدات هذا المشروع بعد خصم الاستخدامات السابقة.";
+      showDeductionMaterialsEmpty(card, message);
+      calcInvoiceTotals();
+      return;
+    }
+
+    list.innerHTML = `
+      <div class="ded-material-list-head" role="presentation">
+        <span>التوريدة</span>
+        <span>المتاح للمشروع</span>
+        <span>الكمية المطلوب خصمها</span>
+      </div>
+      ${supplies
+        .map((item, index) => {
+          const uid = card.dataset.materialsUid || "materials";
+          const inputId = `dedMatQty_${uid}_${index}`;
+          const checkId = `dedMatSel_${uid}_${index}`;
+          const errorId = `dedMatErr_${uid}_${index}`;
+          const selected = savedBySupply.has(item.id);
+          const savedQty = Number(savedBySupply.get(item.id) || 0);
+          const disabled = !!item.disabled;
+          const unit = escapeHtml(item.unit || "");
+          return `
+            <div class="ded-material-row${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}" role="listitem" data-supply-id="${escapeHtml(item.id)}" data-supply-search="${escapeHtml(String(item.description || "").toLowerCase())}">
+              <label class="ded-material-choice" for="${checkId}">
+                <input class="ded-material-select" id="${checkId}" type="checkbox" data-supply-id="${escapeHtml(item.id)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""}>
+                <span class="ded-material-check" aria-hidden="true"></span>
+                <span class="ded-material-main">
+                  <strong title="${escapeHtml(item.description)}">${escapeHtml(item.description)}</strong>
+                  <small>${formatMaterialQuantity(item.unitPrice)} جنيه / ${unit}</small>
+                  ${disabled ? '<small class="ded-material-disabled-note">توريدة محفوظة غير متاحة للخصم حاليًا.</small><button type="button" class="ded-material-remove">إزالة من الاستقطاع</button>' : ""}
+                </span>
+              </label>
+              <span class="ded-material-allowance">
+                <small>المتاح للمشروع</small>
+                <b><span dir="ltr">${formatMaterialQuantity(item.available)}</span> ${unit}</b>
+              </span>
+              <div class="ded-material-quantity">
+                <label for="${inputId}">الكمية المطلوب خصمها</label>
+                <div class="ded-material-qty-wrap">
+                  <input class="form-control ded-material-qty" id="${inputId}" type="number" min="0" max="${item.available}" step="0.01" inputmode="decimal" value="${selected && savedQty > 0 ? savedQty : ""}" data-price="${Number(item.unitPrice)}" data-supply-id="${escapeHtml(item.id)}" data-supply-max="${item.available}" data-unit="${unit}" data-supply-disabled="${disabled ? "1" : "0"}" aria-describedby="${errorId}" aria-label="الكمية المطلوب خصمها من ${escapeHtml(item.description)}" ${selected && !disabled ? "" : "disabled"}>
+                  <span class="ded-material-unit" aria-hidden="true">${unit}</span>
+                </div>
+                <small class="ded-material-error" id="${errorId}" hidden></small>
+              </div>
+            </div>
+          `;
+        })
+        .join("")}
+    `;
+
+    setDeductionMaterialsContentVisible(card, true);
+    paginateDeductionMaterials(card);
+
+    list.querySelectorAll(".ded-material-select").forEach((check) => {
+      check.addEventListener("change", () => {
+        const row = check.closest(".ded-material-row");
+        const qtyInput = row?.querySelector(".ded-material-qty");
+        if (!row || !qtyInput) return;
+        const disabled = row.classList.contains("is-disabled");
+        row.classList.toggle("is-selected", check.checked && !disabled);
+        qtyInput.disabled = !check.checked || disabled;
+        if (!check.checked) {
+          qtyInput.value = "";
+          setDeductionMaterialError(qtyInput, "");
+        } else if (!disabled) {
+          qtyInput.focus();
+        }
+        refreshDeductionMaterialsSummary(card);
+        validateAllDeductionMaterials();
+        calcInvoiceTotals();
+      });
+    });
+
+    list.querySelectorAll(".ded-material-qty").forEach((input) => {
+      input.addEventListener("input", () => {
+        refreshDeductionMaterialsSummary(card);
+        validateAllDeductionMaterials();
+        calcInvoiceTotals();
+      });
+      input.addEventListener("blur", () => {
+        const row = input.closest(".ded-material-row");
+        if (!row?.querySelector(".ded-material-select")?.checked) return;
+        if (String(input.value || "").trim() === "") {
+          setDeductionMaterialError(input, "أدخل الكمية المطلوب خصمها.");
+        }
+        refreshDeductionMaterialsSummary(card);
+      });
+    });
+
+    refreshDeductionMaterialsSummary(card);
+    validateAllDeductionMaterials();
+    calcInvoiceTotals();
+  } catch (error) {
+    if (card._materialsLoadToken !== loadToken) return;
+    console.error("Load deduction materials failed:", error);
+    card.dataset.materialsLoadError = "1";
+    showDeductionMaterialsEmpty(
+      card,
+      "تعذر تحميل التوريدات. تحقق من الاتصال ثم حاول مرة أخرى.",
+      { error: true },
+    );
+    calcInvoiceTotals();
+  }
+}
+
+function refreshMaterialsDeductionCards() {
+  document
+    .querySelectorAll(
+      "#deductionCardsContainer .deduction-card.is-materials-deduction",
+    )
+    .forEach((card) => loadDeductionMaterials(card));
+}
+
+function parseSupplyDeductionKey(value) {
+  if (typeof value !== "string" || !value.startsWith("supply:")) return null;
+  const [, encodedId, qtyText] = value.split(":");
+  const projectSupplyItemId = decodeURIComponent(encodedId || "");
+  const qty = Number(qtyText);
+  return projectSupplyItemId && Number.isFinite(qty) && qty > 0 ? { projectSupplyItemId, qty } : null;
+}
+
+function encodeSupplyDeductionKey(projectSupplyItemId, qty) {
+  return `supply:${encodeURIComponent(projectSupplyItemId)}:${qty}`;
+}
+
+function getDeductionMaterialsAmount(card) {
+  const amount = [...(card.querySelectorAll(".ded-material-select:checked") || [])].reduce((sum, check) => {
+    const input = check.closest(".ded-material-row")?.querySelector(".ded-material-qty");
+    const qty = Math.round((Number(input?.value) || 0) * 100) / 100;
+    const unitPrice = Math.round(((Number(input?.dataset.price) || 0) + Number.EPSILON) * 100) / 100;
+    return sum + qty * unitPrice;
+  }, 0);
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
 function toggleMultiSelect(btn) {
@@ -8238,6 +9478,8 @@ async function saveInvoice() {
     return;
   }
 
+  if (!(await revalidateMaterialsBeforeSave())) return;
+
   const contract = state.contracts.find((c) => c.id === contractId) || {};
   const project = state.projects.find((p) => p.id === contract.projectId) || {};
 
@@ -8270,6 +9512,23 @@ async function saveInvoice() {
       const selectedKeys = msBtn
         ? msBtn.getAttribute("data-selected")?.split(",").filter(Boolean)
         : [];
+      const isMaterialsDeduction = card.querySelector(".ded-desc")?.selectedOptions?.[0]?.textContent.trim() === "خصم خامات";
+      const supplySelections = isMaterialsDeduction
+        ? [...card.querySelectorAll(".ded-material-row")]
+            .filter(
+              (row) =>
+                row.querySelector(".ded-material-select")?.checked &&
+                Number(row.querySelector(".ded-material-qty")?.value) > 0,
+            )
+            .map((row) => {
+              const input = row.querySelector(".ded-material-qty");
+              return {
+                projectSupplyItemId: input.dataset.supplyId,
+                qty: roundMaterialQuantity(Number(input.value)),
+                max: Number(input.dataset.supplyMax),
+              };
+            })
+        : [];
       deductions.push({
         id: card.getAttribute("data-ded-id") || generateId(12),
         description:
@@ -8281,7 +9540,7 @@ async function saveInvoice() {
           card.querySelector(".ded-desc").value ||
           "",
         calcType: card.querySelector(".ded-type").value,
-        calcFromKeys: selectedKeys,
+        calcFromKeys: isMaterialsDeduction ? supplySelections.map(selection => encodeSupplyDeductionKey(selection.projectSupplyItemId, selection.qty)) : selectedKeys,
         val: parseFloat(card.querySelector(".ded-val").value) || 0,
         amount:
           parseFloat(
@@ -8289,6 +9548,7 @@ async function saveInvoice() {
               "0",
           ) || 0,
         isRefundable: card.querySelector(".ded-refund").checked,
+        supplySelections,
       });
     });
 
@@ -8321,10 +9581,12 @@ async function saveInvoice() {
   };
 
   try {
+    let savedInvoiceId = id;
     if (id) {
       await erpApi.invoices.update(id, apiPayload);
     } else {
-      await erpApi.invoices.create(apiPayload);
+      const created = await erpApi.invoices.create(apiPayload);
+      savedInvoiceId = created?.id;
     }
     await syncStateFromBackend();
   } catch (error) {
