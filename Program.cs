@@ -3,6 +3,7 @@ using InvoicesErp.Interfaces;
 using InvoicesErp.Middleware;
 using InvoicesErp.Services;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -81,8 +82,7 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
-// Verify DB connectivity and seed the default admin if the AppUsers table is empty.
-// Schema is created manually in SQL Server (SSMS); no DDL is executed at startup.
+// Verify DB connectivity, initialize the supply catalog schema, and seed the default admin.
 try
 {
     using var scope = app.Services.CreateScope();
@@ -90,6 +90,24 @@ try
 
     if (await db.Database.CanConnectAsync())
     {
+        // The standalone supply catalog is an authorized feature schema addition.
+        // Apply its idempotent SQL batches when the configured database is available.
+        var supplySchemaPath = Path.Combine(app.Environment.ContentRootPath, "Database", "SupplyCatalogSchema.sql");
+        if (File.Exists(supplySchemaPath))
+        {
+            var supplySchema = await File.ReadAllTextAsync(supplySchemaPath);
+            foreach (var batch in Regex.Split(supplySchema, @"(?im)^\s*GO\s*;?\s*$")
+                         .Where(sql => !string.IsNullOrWhiteSpace(sql)))
+            {
+                await db.Database.ExecuteSqlRawAsync(batch);
+            }
+            app.Logger.LogInformation("Supply catalog schema is ready.");
+        }
+        else
+        {
+            app.Logger.LogWarning("Supply catalog schema script was not found at {SchemaPath}.", supplySchemaPath);
+        }
+
         await UserStore.SeedAdminAsync(db);
     }
     else

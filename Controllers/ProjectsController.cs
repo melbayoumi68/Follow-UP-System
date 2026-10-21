@@ -164,6 +164,7 @@ public class ProjectsController(AppDbContext db) : ControllerBase
             await db.Contracts.Where(c => contractIds.Contains(c.Id)).ExecuteDeleteAsync(ct);
         }
 
+        await db.SupplyCatalogAssignments.Where(a => a.ProjectId == id).ExecuteDeleteAsync(ct);
         await db.ProjectSupplyItems.Where(s => s.ProjectId == id).ExecuteDeleteAsync(ct);
 
         db.Projects.Remove(x);

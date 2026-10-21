@@ -18,12 +18,23 @@ public class ProjectSupplyItemsController(AppDbContext db) : ControllerBase
     {
         if (!await db.Projects.AnyAsync(p => p.Id == projectId, ct)) return NotFound();
         var rows = await db.ProjectSupplyItems.AsNoTracking().Where(s => s.ProjectId == projectId)
-            .OrderByDescending(s => s.SupplyDate).Select(s => new ProjectSupplyItemDto(
+            .OrderByDescending(s => s.SupplyDate)
+            .Select(s => new
+            {
                 s.Id, s.ProjectId, s.Description, s.Unit, s.Qty, s.UnitPrice, s.Total,
-                db.ContractSupplyAllocations.Where(a => a.ProjectSupplyItemId == s.Id).Sum(a => (decimal?)a.Qty) ?? 0m,
-                s.Qty - (db.ContractSupplyAllocations.Where(a => a.ProjectSupplyItemId == s.Id).Sum(a => (decimal?)a.Qty) ?? 0m),
-                s.SupplyDate, s.Note, s.CreatedAt, s.UpdatedAt)).ToListAsync(ct);
-        return Ok(rows);
+                AllocatedQty = db.ContractSupplyAllocations.Where(a => a.ProjectSupplyItemId == s.Id).Sum(a => (decimal?)a.Qty) ?? 0m,
+                s.SupplyDate, s.Note, s.CreatedAt, s.UpdatedAt,
+                // حالة التوريدة الحقيقية من سجل التوريدات (مرتبطة عبر ربط التوريدات بالمشروعات)
+                SupplyCatalogItemId = db.SupplyCatalogAssignments.Where(a => a.ProjectSupplyItemId == s.Id)
+                    .Select(a => a.SupplyCatalogItemId).FirstOrDefault(),
+                SupplyStatus = db.SupplyCatalogAssignments.Where(a => a.ProjectSupplyItemId == s.Id)
+                    .Select(a => a.SupplyCatalogItem.Status).FirstOrDefault()
+            })
+            .ToListAsync(ct);
+        return Ok(rows.Select(r => new ProjectSupplyItemDto(
+            r.Id, r.ProjectId, r.Description, r.Unit, r.Qty, r.UnitPrice, r.Total,
+            r.AllocatedQty, r.Qty - r.AllocatedQty, r.SupplyDate, r.Note, r.CreatedAt, r.UpdatedAt,
+            r.SupplyCatalogItemId, r.SupplyStatus)).ToList());
     }
 
     [HttpPost]

@@ -73,10 +73,12 @@ Controllers/
   SectorController.cs
   SectorManagerController.cs
   SocialInsuranceController.cs
+  SupplyCatalogController.cs
 Data/
   AppDbContext.cs
 Database/
   ManualSchema.sql
+  SupplyCatalogSchema.sql
 DTOs/
   BootstrapDto.cs
   ContractDto.cs
@@ -101,6 +103,7 @@ DTOs/
   SectorManagerDto.cs
   SocialInsuranceContractDto.cs
   SocialInsurancePaymentDto.cs
+  SupplyCatalogDtos.cs
   SupplyDtos.cs
   UpdateSectorDto.cs
   UpdateSectorManagerDto.cs
@@ -142,6 +145,7 @@ Models/
   SectorManager.cs
   SocialInsuranceContract.cs
   SocialInsurancePayment.cs
+  SupplyCatalogItem.cs
 Properties/
   launchSettings.json
 Services/
@@ -186,6 +190,7 @@ Views/
       _Reports.cshtml
       _Sidebar.cshtml
       _SocialInsurance.cshtml
+      _Supplies.cshtml
     _Layout.cshtml
   _ViewImports.cshtml
   _ViewStart.cshtml
@@ -437,6 +442,105 @@ public class ProjectSupplyItemsController(AppDbContext db) : ControllerBase
 }
 </file>
 
+<file path="Controllers/SupplyCatalogController.cs">
+using InvoicesErp.Auth;
+using InvoicesErp.Data;
+using InvoicesErp.DTOs;
+using InvoicesErp.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace InvoicesErp.Controllers;
+
+[ApiController]
+[Route("api/supply-catalog")]
+public class SupplyCatalogController(AppDbContext db) : ControllerBase
+{
+    [HttpGet]
+    [RequirePermission(PermissionModules.Projects, PermissionActions.View)]
+    public async Task<IActionResult> List(CancellationToken ct)
+    {
+        var items = await db.SupplyCatalogItems.AsNoTracking().OrderByDescending(x => x.CreatedAt)
+            .Select(x => new { x.Id, x.Type, x.Unit, x.CreatedAt }).ToListAsync(ct);
+        var ids = items.Select(x => x.Id).ToArray();
+        var links = await db.SupplyCatalogAssignments.AsNoTracking().Where(x => ids.Contains(x.SupplyCatalogItemId))
+            .Select(x => new { x.SupplyCatalogItemId, ProjectName = x.Project.Name }).ToListAsync(ct);
+        return Ok(items.Select(x => new SupplyCatalogItemDto(x.Id, x.Type, x.Unit, x.CreatedAt,
+            links.Where(a => a.SupplyCatalogItemId == x.Id).Select(a => a.ProjectName).Distinct().ToArray())));
+    }
+
+    [HttpPost]
+    [RequirePermission(PermissionModules.Projects, PermissionActions.Create)]
+    public async Task<IActionResult> Create(SupplyCatalogWriteDto dto, CancellationToken ct)
+    {
+        if (dto is null || string.IsNullOrWhiteSpace(dto.Type) || string.IsNullOrWhiteSpace(dto.Unit))
+            return BadRequest(new { message = "أدخلي نوع التوريدة ووحدة القياس" });
+        var now = DateTime.UtcNow;
+        var item = new SupplyCatalogItem
+        {
+            Id = Guid.NewGuid().ToString("N"), Type = dto.Type.Trim(), Material = "", Unit = dto.Unit.Trim(),
+            Qty = 0, UnitPrice = 0, Total = 0, SupplyDate = DateOnly.FromDateTime(now), CreatedAt = now
+        };
+        db.SupplyCatalogItems.Add(item);
+        await db.SaveChangesAsync(ct);
+        return Ok(new SupplyCatalogItemDto(item.Id, item.Type, item.Unit, item.CreatedAt, []));
+    }
+
+    [HttpGet("{id}/assignments")]
+    [RequirePermission(PermissionModules.Projects, PermissionActions.View)]
+    public async Task<IActionResult> ListAssignments(string id, CancellationToken ct)
+    {
+        if (!await db.SupplyCatalogItems.AnyAsync(x => x.Id == id, ct)) return NotFound();
+        var rows = await db.SupplyCatalogAssignments.AsNoTracking().Where(x => x.SupplyCatalogItemId == id)
+            .OrderBy(x => x.Project.Name)
+            .Select(x => new SupplyCatalogAssignmentDto(x.Id, x.SupplyCatalogItemId, x.ProjectId, x.Project.Name, x.ProjectSupplyItemId, x.Qty, x.ProjectSupplyItem.SupplyDate, x.CreatedAt))
+            .ToListAsync(ct);
+        return Ok(rows);
+    }
+
+    [HttpPost("{id}/assignments")]
+    [RequirePermission(PermissionModules.Projects, PermissionActions.Create)]
+    public async Task<IActionResult> Assign(string id, List<SupplyCatalogAssignmentWriteDto> assignments, CancellationToken ct)
+    {
+        if (assignments is null || assignments.Count == 0) return BadRequest(new { message = "اختر مشروعاً واحداً على الأقل وحددي الكمية" });
+        if (assignments.Any(x => string.IsNullOrWhiteSpace(x.ProjectId) || x.Qty <= 0 || x.UnitPrice < 0 || x.SupplyDate == default)) return BadRequest(new { message = "كل مشروع يحتاج كمية أكبر من صفر وسعر وحدة وتاريخ توريد صحيح" });
+        if (assignments.Select(x => x.ProjectId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != assignments.Count)
+            return BadRequest(new { message = "المشروع مضاف أكثر من مرة" });
+
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        var catalogItem = await db.SupplyCatalogItems.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (catalogItem is null) return NotFound(new { message = "التوريدة غير موجودة" });
+        var projectIds = assignments.Select(x => x.ProjectId).ToArray();
+        var projects = await db.Projects.Where(x => projectIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        if (projects.Count != projectIds.Length) return BadRequest(new { message = "أحد المشروعات المختارة غير موجود" });
+
+        var now = DateTime.UtcNow;
+        var result = new List<SupplyCatalogAssignmentDto>();
+        foreach (var allocation in assignments)
+        {
+            var projectSupply = new ProjectSupplyItem
+            {
+                Id = Guid.NewGuid().ToString("N"), ProjectId = allocation.ProjectId,
+                Description = catalogItem.Type, Unit = catalogItem.Unit,
+                Qty = allocation.Qty, UnitPrice = allocation.UnitPrice, Total = Math.Round(allocation.Qty * allocation.UnitPrice, 2),
+                SupplyDate = allocation.SupplyDate, Note = null, CreatedAt = now, UpdatedAt = now
+            };
+            var row = new SupplyCatalogAssignment
+            {
+                Id = Guid.NewGuid().ToString("N"), SupplyCatalogItemId = catalogItem.Id,
+                ProjectId = allocation.ProjectId, ProjectSupplyItemId = projectSupply.Id, Qty = allocation.Qty, CreatedAt = now
+            };
+            db.ProjectSupplyItems.Add(projectSupply);
+            db.SupplyCatalogAssignments.Add(row);
+            result.Add(new SupplyCatalogAssignmentDto(row.Id, row.SupplyCatalogItemId, row.ProjectId, projects[row.ProjectId].Name, row.ProjectSupplyItemId, row.Qty, projectSupply.SupplyDate, row.CreatedAt));
+        }
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return Ok(result);
+    }
+}
+</file>
+
 <file path="Database/ManualSchema.sql">
 -- =============================================================================
 -- InvoicesERP - Manual schema script (idempotent)
@@ -487,6 +591,45 @@ BEGIN
         CONSTRAINT FK_ProjectSupplyItems_Projects FOREIGN KEY (ProjectId) REFERENCES dbo.Projects(Id) ON DELETE NO ACTION
     );
     CREATE INDEX IX_ProjectSupplyItems_ProjectId ON dbo.ProjectSupplyItems(ProjectId);
+END;
+GO
+
+-- -----------------------------------------------------------------------------
+-- 2a) Standalone supply catalog and project assignments
+-- -----------------------------------------------------------------------------
+IF OBJECT_ID(N'dbo.SupplyCatalogItems', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SupplyCatalogItems (
+        Id NVARCHAR(64) NOT NULL CONSTRAINT PK_SupplyCatalogItems PRIMARY KEY,
+        Type NVARCHAR(120) NOT NULL,
+        Material NVARCHAR(350) NOT NULL,
+        Unit NVARCHAR(50) NOT NULL,
+        Qty DECIMAL(18,2) NOT NULL,
+        UnitPrice DECIMAL(18,2) NOT NULL,
+        Total DECIMAL(18,2) NOT NULL,
+        SupplyDate DATE NOT NULL,
+        Note NVARCHAR(1000) NULL,
+        CreatedAt DATETIME2 NOT NULL
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.SupplyCatalogAssignments', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SupplyCatalogAssignments (
+        Id NVARCHAR(64) NOT NULL CONSTRAINT PK_SupplyCatalogAssignments PRIMARY KEY,
+        SupplyCatalogItemId NVARCHAR(64) NOT NULL,
+        ProjectId NVARCHAR(64) NOT NULL,
+        ProjectSupplyItemId NVARCHAR(64) NOT NULL,
+        Qty DECIMAL(18,2) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL,
+        CONSTRAINT FK_SupplyCatalogAssignments_SupplyCatalogItems FOREIGN KEY (SupplyCatalogItemId) REFERENCES dbo.SupplyCatalogItems(Id) ON DELETE NO ACTION,
+        CONSTRAINT FK_SupplyCatalogAssignments_Projects FOREIGN KEY (ProjectId) REFERENCES dbo.Projects(Id) ON DELETE NO ACTION,
+        CONSTRAINT FK_SupplyCatalogAssignments_ProjectSupplyItems FOREIGN KEY (ProjectSupplyItemId) REFERENCES dbo.ProjectSupplyItems(Id) ON DELETE NO ACTION
+    );
+    CREATE UNIQUE INDEX IX_SupplyCatalogAssignments_ProjectSupplyItemId ON dbo.SupplyCatalogAssignments(ProjectSupplyItemId);
+    CREATE INDEX IX_SupplyCatalogAssignments_SupplyCatalogItemId ON dbo.SupplyCatalogAssignments(SupplyCatalogItemId);
+    CREATE INDEX IX_SupplyCatalogAssignments_ProjectId ON dbo.SupplyCatalogAssignments(ProjectId);
 END;
 GO
 
@@ -661,6 +804,56 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_ExecPositions_Contrac
 GO
 </file>
 
+<file path="Database/SupplyCatalogSchema.sql">
+-- Add the standalone supply catalog and its project assignments.
+-- Prerequisites: dbo.Projects and dbo.ProjectSupplyItems already exist.
+
+IF OBJECT_ID(N'dbo.SupplyCatalogItems', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SupplyCatalogItems (
+        Id NVARCHAR(64) NOT NULL CONSTRAINT PK_SupplyCatalogItems PRIMARY KEY,
+        Type NVARCHAR(120) NOT NULL,
+        Material NVARCHAR(350) NOT NULL,
+        Unit NVARCHAR(50) NOT NULL,
+        Qty DECIMAL(18,2) NOT NULL,
+        UnitPrice DECIMAL(18,2) NOT NULL,
+        Total DECIMAL(18,2) NOT NULL,
+        SupplyDate DATE NOT NULL,
+        Note NVARCHAR(1000) NULL,
+        CreatedAt DATETIME2 NOT NULL
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.SupplyCatalogAssignments', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.SupplyCatalogAssignments (
+        Id NVARCHAR(64) NOT NULL CONSTRAINT PK_SupplyCatalogAssignments PRIMARY KEY,
+        SupplyCatalogItemId NVARCHAR(64) NOT NULL,
+        ProjectId NVARCHAR(64) NOT NULL,
+        ProjectSupplyItemId NVARCHAR(64) NOT NULL,
+        Qty DECIMAL(18,2) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL,
+        CONSTRAINT FK_SupplyCatalogAssignments_SupplyCatalogItems FOREIGN KEY (SupplyCatalogItemId) REFERENCES dbo.SupplyCatalogItems(Id) ON DELETE NO ACTION,
+        CONSTRAINT FK_SupplyCatalogAssignments_Projects FOREIGN KEY (ProjectId) REFERENCES dbo.Projects(Id) ON DELETE NO ACTION,
+        CONSTRAINT FK_SupplyCatalogAssignments_ProjectSupplyItems FOREIGN KEY (ProjectSupplyItemId) REFERENCES dbo.ProjectSupplyItems(Id) ON DELETE NO ACTION
+    );
+    CREATE UNIQUE INDEX IX_SupplyCatalogAssignments_ProjectSupplyItemId ON dbo.SupplyCatalogAssignments(ProjectSupplyItemId);
+    CREATE INDEX IX_SupplyCatalogAssignments_SupplyCatalogItemId ON dbo.SupplyCatalogAssignments(SupplyCatalogItemId);
+    CREATE INDEX IX_SupplyCatalogAssignments_ProjectId ON dbo.SupplyCatalogAssignments(ProjectId);
+END;
+GO
+</file>
+
+<file path="DTOs/SupplyCatalogDtos.cs">
+namespace InvoicesErp.DTOs;
+
+public record SupplyCatalogWriteDto(string Type, string Unit);
+public record SupplyCatalogItemDto(string Id, string Type, string Unit, DateTime CreatedAt, string[] ProjectNames);
+public record SupplyCatalogAssignmentWriteDto(string ProjectId, decimal Qty, decimal UnitPrice, DateOnly SupplyDate);
+public record SupplyCatalogAssignmentDto(string Id, string SupplyCatalogItemId, string ProjectId, string ProjectName, string ProjectSupplyItemId, decimal Qty, DateOnly SupplyDate, DateTime CreatedAt);
+</file>
+
 <file path="DTOs/SupplyDtos.cs">
 namespace InvoicesErp.DTOs;
 
@@ -733,6 +926,91 @@ public class ContractSupplyAllocation
     public ProjectSupplyItem ProjectSupplyItem { get; set; } = null!;
     public Contract Contract { get; set; } = null!;
 }
+</file>
+
+<file path="Models/SupplyCatalogItem.cs">
+namespace InvoicesErp.Models;
+
+public class SupplyCatalogItem
+{
+    public string Id { get; set; } = "";
+    public string Type { get; set; } = "";
+    public string Material { get; set; } = "";
+    public string Unit { get; set; } = "";
+    public decimal Qty { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal Total { get; set; }
+    public DateOnly SupplyDate { get; set; }
+    public string? Note { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public ICollection<SupplyCatalogAssignment> Assignments { get; set; } = new List<SupplyCatalogAssignment>();
+}
+
+public class SupplyCatalogAssignment
+{
+    public string Id { get; set; } = "";
+    public string SupplyCatalogItemId { get; set; } = "";
+    public string ProjectId { get; set; } = "";
+    public string ProjectSupplyItemId { get; set; } = "";
+    public decimal Qty { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public SupplyCatalogItem SupplyCatalogItem { get; set; } = null!;
+    public Project Project { get; set; } = null!;
+    public ProjectSupplyItem ProjectSupplyItem { get; set; } = null!;
+}
+</file>
+
+<file path="Views/Shared/Partials/_Supplies.cshtml">
+<div id="suppliesView" class="page-view">
+    <div class="table-container supplies-workspace">
+        <header class="supplies-page-header">
+            <div class="supplies-page-heading">
+                <span class="supplies-eyebrow">إدارة التوريدات للمشروعات</span>
+                <h2>التوريدات</h2>
+                <p>أضيفي أنواع التوريدات ووحداتها، ثم اربطيها بالمشروعات وأسجلي الكميات والأسعار الفعلية.</p>
+            </div>
+            <div class="supplies-header-stat"><span>عدد أنواع التوريدات</span><strong id="suppliesGrandTotal">0</strong><small>توريدة</small></div>
+        </header>
+
+        <nav class="supplies-flow-tabs" aria-label="خطوات إدارة التوريدات">
+            <button type="button" class="supplies-flow-tab active" data-supply-tab="catalog" aria-controls="supplyCatalogPanel" aria-selected="true"><span class="supplies-step-number">01</span><span><strong>إضافة التوريدات</strong><small>تعريف نوع التوريدة ومراجعة السجل</small></span></button>
+            <span class="supplies-flow-connector" aria-hidden="true"></span>
+            <button type="button" class="supplies-flow-tab" data-supply-tab="assign" aria-controls="supplyAssignPanel" aria-selected="false"><span class="supplies-step-number">02</span><span><strong>ربط التوريدات بالمشروعات</strong><small>اختيار المشروع وإدخال الكمية وسعر الوحدة</small></span></button>
+        </nav>
+
+        <section class="supplies-flow-panel active" id="supplyCatalogPanel" data-supply-panel="catalog">
+            <div class="supply-catalog-layout">
+                <form id="supplyCatalogForm" class="supply-entry-panel">
+                    <div class="supply-form-title"><span class="supply-form-icon" aria-hidden="true">＋</span><div><h4>إضافة توريدة جديدة</h4><p>أدخلي بيانات التوريدة ثم اضغطي على إضافة</p></div></div>
+                    <div class="supply-entry-grid">
+                        <div class="form-group"><label for="supplyType">نوع التوريدة <span aria-hidden="true">*</span></label><input class="form-control" id="supplyType" maxlength="120" placeholder="اختار نوع التوريدة" required></div>
+                        <div class="form-group"><label for="supplyUnit">الوحدة <span aria-hidden="true">*</span></label><select class="form-select" id="supplyUnit" required><option value="" selected disabled>اختر الوحدة</option><option value="عدد">عدد</option><option value="قطعة">قطعة</option><option value="شيكارة">شيكارة</option><option value="كيس">كيس</option><option value="طن">طن</option><option value="كيلوجرام">كيلوجرام</option><option value="جرام">جرام</option><option value="متر">متر</option><option value="متر طولي">متر طولي</option><option value="متر مربع">متر مربع</option><option value="متر مكعب">متر مكعب</option><option value="لتر">لتر</option><option value="جالون">جالون</option><option value="لوح">لوح</option><option value="لفة">لفة</option><option value="كرتونة">كرتونة</option><option value="نقلة">نقلة</option><option value="طقم">طقم</option><option value="يوم">يوم</option><option value="ساعة">ساعة</option></select></div>
+                    </div>
+                    <div class="supply-entry-footer"><button type="submit" class="btn btn-primary" id="btnSaveSupply"><span aria-hidden="true">＋</span> إضافة التوريدة</button></div>
+                    <div class="supply-form-hint"><span aria-hidden="true">ⓘ</span><span>بعد إضافة التوريدة يمكنك ربطها بالمشروعات وتحديد الكمية والسعر لكل مشروع.</span></div>
+                </form>
+                <div class="supplies-table-card">
+                    <div class="supplies-table-card-head"><h4><span aria-hidden="true">▦</span> قائمة التوريدات</h4><label class="supply-catalog-search"><span aria-hidden="true">⌕</span><input id="supplyCatalogSearch" type="search" placeholder="ابحثفي أنواع التوريدات..."></label></div>
+                    <span id="supplyCatalogCount" hidden>0 توريدات</span>
+                    <div class="data-table-wrapper"><table class="data-table"><thead><tr><th>#</th><th>نوع التوريدة</th><th>الوحدة</th><th>تاريخ الإضافة</th><th>المشروعات المرتبطة</th><th>الإجراءات</th></tr></thead><tbody id="suppliesTableBody"><tr><td colspan="6" class="supply-empty-state">جارٍ تحميل سجل التوريدات...</td></tr></tbody></table></div>
+                    <div class="supply-catalog-pagination"><label><select id="supplyCatalogPageSize"><option value="7">7</option><option value="10">10</option><option value="20">20</option></select><span>عدد العناصر في الصفحة</span></label><div class="supply-catalog-page-controls" id="supplyCatalogPageControls"></div></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="supplies-flow-panel" id="supplyAssignPanel" data-supply-panel="assign" hidden>
+            <div class="supplies-section-heading"><div><h3>ربط التوريدات بالمشروعات</h3><p>اختر توريدة ومشروعًا أو أكثر، ثم أدخلي الكمية وسعر الوحدة وتاريخ التوريد لكل مشروع. يُحسب الإجمالي تلقائيًا.</p></div></div>
+            <div class="supply-assign-layout">
+                <div class="supply-assign-main">
+                    <div class="supply-catalog-select-card"><label for="supplyCatalogSelect">التوريدة المراد ربطها</label><select id="supplyCatalogSelect" class="form-select"><option value="">اختر توريدة من السجل</option></select><div id="supplyAssignmentSummary" class="supply-assignment-summary is-empty"><span class="supply-summary-mark">i</span><span>اختر توريدة لعرض الكمية المتاحة بالمخزون.</span></div></div>
+                    <div class="supply-project-allocation-card"><div class="supplies-table-card-head"><div><h4>بيانات التوريدة لكل مشروع</h4><p>أدخلي الكمية وسعر الوحدة وتاريخ التوريد. الإجمالي ناتج ضرب الكمية في سعر الوحدة.</p></div><button type="button" class="btn btn-ghost btn-sm" id="btnSelectAllSupplyProjects">تحديد الكل</button></div><div id="supplyProjectAllocations" class="supply-project-allocation-list"><div class="supply-empty-state">اختر توريدة أولًا لبدء الربط.</div></div><div class="supply-allocation-footer"><span>إجمالي الكمية المحددة</span><strong><span id="supplyAssignmentQtyTotal">0.00</span><small id="supplyAssignmentUnit"></small></strong><span>إجمالي القيمة</span><strong><span id="supplyAssignmentValueTotal">0.00</span><small>جنيه</small></strong></div></div>
+                    <div class="supply-assign-actions"><span id="supplyAssignmentValidation" role="status"></span><button type="button" class="btn btn-primary" id="btnSaveSupplyAssignments" disabled>حفظ ربط التوريدة</button></div>
+                </div>
+                <aside class="supply-assignment-history"><div class="supply-history-heading"><span class="supply-history-icon" aria-hidden="true">↗</span><div><h4>المشروعات المستلمة</h4><p>التوزيعات السابقة للتوريدة المحددة</p></div></div><div id="supplyAssignmentsHistory" class="supply-history-list"><div class="supply-empty-state">لم يتم اختيار توريدة بعد.</div></div></aside>
+            </div>
+        </section>
+    </div>
+</div>
 </file>
 
 <file path="Auth/AppUser.cs">
@@ -2515,6 +2793,7 @@ public class ProjectsController(AppDbContext db) : ControllerBase
             await db.Contracts.Where(c => contractIds.Contains(c.Id)).ExecuteDeleteAsync(ct);
         }
 
+        await db.SupplyCatalogAssignments.Where(a => a.ProjectId == id).ExecuteDeleteAsync(ct);
         await db.ProjectSupplyItems.Where(s => s.ProjectId == id).ExecuteDeleteAsync(ct);
 
         db.Projects.Remove(x);
@@ -5934,14 +6213,6 @@ public class UserStore : InvoicesErp.Interfaces.IUserStore
                            placeholder="ابحث عن مدير القطاع..." autocomplete="off" autocorrect="off" spellcheck="false">
                     <div id="projectSectorManagerDropdown" class="sector-manager-dropdown" style="display:none;"></div>
                 </div>
-                <section class="project-supplies-section span-full" aria-labelledby="projectSuppliesHeading">
-                    <div class="supply-section-heading">
-                        <div><h4 id="projectSuppliesHeading">توريدات المشروع</h4><p>تُسجل على المشروع أولاً، ولا تخصم من أي عقد إلا بعد ربط الكمية بالعقد.</p></div>
-                        <button type="button" class="btn btn-secondary btn-sm" id="btnAddProjectSupply">إضافة توريدة</button>
-                    </div>
-                    <div id="projectSupplyRows" class="project-supply-rows"></div>
-                    <div class="supply-section-total">إجمالي التوريدات المدخلة <strong id="projectSuppliesTotal">0.00</strong></div>
-                </section>
             </form>
         </div>
         <div class="modal-footer"><button class="btn btn-secondary modal-cancel">إلغاء</button><button class="btn btn-primary" id="btnSaveProject">حفظ</button></div>
@@ -11533,6 +11804,7 @@ Thumbs.db
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="Database\SupplyCatalogSchema.sql" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -12072,6 +12344,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ProjectSupplyItem> ProjectSupplyItems => Set<ProjectSupplyItem>();
     public DbSet<ContractSupplyAllocation> ContractSupplyAllocations => Set<ContractSupplyAllocation>();
     public DbSet<InvoiceSupplyAllocation> InvoiceSupplyAllocations => Set<InvoiceSupplyAllocation>();
+    public DbSet<SupplyCatalogItem> SupplyCatalogItems => Set<SupplyCatalogItem>();
+    public DbSet<SupplyCatalogAssignment> SupplyCatalogAssignments => Set<SupplyCatalogAssignment>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -12180,6 +12454,35 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne(x => x.ContractSupplyAllocation).WithMany().HasForeignKey(x => x.ContractSupplyAllocationId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.InvoiceId);
             e.HasIndex(x => x.ContractSupplyAllocationId);
+        });
+
+        b.Entity<SupplyCatalogItem>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(IdLen);
+            e.Property(x => x.Type).HasMaxLength(120).IsRequired();
+            e.Property(x => x.Material).HasMaxLength(350).IsRequired();
+            e.Property(x => x.Unit).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Qty).HasPrecision(18, 2);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 2);
+            e.Property(x => x.Total).HasPrecision(18, 2);
+            e.Property(x => x.SupplyDate).HasColumnType("date");
+        });
+
+        b.Entity<SupplyCatalogAssignment>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(IdLen);
+            e.Property(x => x.SupplyCatalogItemId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.ProjectId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.ProjectSupplyItemId).HasMaxLength(IdLen).IsRequired();
+            e.Property(x => x.Qty).HasPrecision(18, 2);
+            e.HasOne(x => x.SupplyCatalogItem).WithMany(x => x.Assignments).HasForeignKey(x => x.SupplyCatalogItemId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Project).WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ProjectSupplyItem).WithMany().HasForeignKey(x => x.ProjectSupplyItemId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.SupplyCatalogItemId);
+            e.HasIndex(x => x.ProjectId);
+            e.HasIndex(x => x.ProjectSupplyItemId).IsUnique();
         });
 
         b.Entity<ContractPaymentValueLog>(e =>
@@ -12479,6 +12782,7 @@ public class Contract
             <partial name="~/Views/Shared/Partials/_Projects.cshtml" />
             <partial name="~/Views/Shared/Partials/_Contracts.cshtml" />
             <partial name="~/Views/Shared/Partials/_PaymentValues.cshtml" />
+            <partial name="~/Views/Shared/Partials/_Supplies.cshtml" />
             <partial name="~/Views/Shared/Partials/_Invoices.cshtml" />
             <partial name="~/Views/Shared/Partials/_SocialInsurance.cshtml" />
             <partial name="~/Views/Shared/Partials/_ExecPosition.cshtml" />
@@ -14319,7 +14623,7 @@ public class ContractsController(AppDbContext db) : ControllerBase
                 <div class="form-group"><label>قيمة الضريبة المضافة</label><input type="number" step="any" class="form-control" id="contractVatAmount" value="0" readonly title="تُحدَّث من الموقف التنفيذي"></div>
                 <section id="contractSuppliesPanel" class="contract-supplies-panel span-full" hidden>
                     <div class="supply-section-heading">
-                        <div><h4>توريدات المشروع المرتبطة بالعقد</h4><p>اختاري كمية من المتاح على المشروع. القيمة المرتبطة تخصم من قيمة العقد المعدل.</p></div>
+                        <div><h4>توريدات المشروع المرتبطة بالعقد</h4><p>اختر كمية من المتاح على المشروع. القيمة المرتبطة تخصم من قيمة العقد المعدل.</p></div>
                         <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshContractSupplies">تحديث</button>
                     </div>
                     <div id="contractAvailableSupplies" class="contract-supply-list"></div>
@@ -14364,6 +14668,7 @@ public class ContractsController(AppDbContext db) : ControllerBase
             <li class="sidebar-item"><a class="sidebar-link" data-page="contractsView" data-tooltip="العقود"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span><span class="sidebar-label">العقود</span></a></li>
 
             <li class="sidebar-module-header">العمليات</li>
+            <li class="sidebar-item"><a class="sidebar-link" data-page="suppliesView" data-tooltip="التوريدات"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18l-2 13H5L3 7Z"/><path d="M8 7a4 4 0 0 1 8 0M8 12h8"/></svg></span><span class="sidebar-label">التوريدات</span></a></li>
             <li class="sidebar-item"><a class="sidebar-link" data-page="invoicesView" data-tooltip="المستخلصات"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><span class="sidebar-label">المستخلصات</span></a></li>
             <li class="sidebar-item"><a class="sidebar-link" data-page="execPositionView" data-tooltip="الموقف التنفيذي"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/></svg></span><span class="sidebar-label">الموقف التنفيذي</span></a></li>
             <li class="sidebar-item"><a class="sidebar-link" data-page="costControlView" data-tooltip="مراقبة تكاليف العقود"><span class="sidebar-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg></span><span class="sidebar-label">مراقبة التكاليف</span></a></li>
@@ -14508,6 +14813,12 @@ export const erpApi = {
     supplyItems: (projectId) => request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: 'GET' }),
     addSupplyItem: (projectId, payload) => request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: 'POST', body: JSON.stringify(payload) })
   },
+  supplyCatalog: {
+    list: () => request('/supply-catalog', { method: 'GET' }),
+    create: (payload) => request('/supply-catalog', { method: 'POST', body: JSON.stringify(payload) }),
+    assignments: (id) => request(`/supply-catalog/${encodeURIComponent(id)}/assignments`, { method: 'GET' }),
+    assign: (id, payload) => request(`/supply-catalog/${encodeURIComponent(id)}/assignments`, { method: 'POST', body: JSON.stringify(payload) })
+  },
   contracts: {
     ...collection('contracts'),
     supplyAllocations: (contractId) => request(`/contracts/${encodeURIComponent(contractId)}/supply-allocations`, { method: 'GET' }),
@@ -14525,7 +14836,10 @@ export const erpApi = {
     getById: (id) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'GET' }),
     create: (payload) => request('/invoices', { method: 'POST', body: JSON.stringify(payload) }),
     update: (id, payload) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
-    remove: (id) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    remove: (id) => request(`/invoices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    supplyAllocations: (id) => request(`/invoices/${encodeURIComponent(id)}/supply-allocations`, { method: 'GET' }),
+    addSupplyAllocation: (id, payload) => request(`/invoices/${encodeURIComponent(id)}/supply-allocations`, { method: 'POST', body: JSON.stringify(payload) }),
+    deleteSupplyAllocation: (id, allocationId) => request(`/invoices/${encodeURIComponent(id)}/supply-allocations/${encodeURIComponent(allocationId)}`, { method: 'DELETE' })
   },
   dashboard: () => request('/reports/dashboard', { method: 'GET' }),
   approveInvoice: (id) => request(`/invoices/${encodeURIComponent(id)}/approve`, { method: 'POST' }),
@@ -14572,6 +14886,7 @@ using InvoicesErp.Interfaces;
 using InvoicesErp.Middleware;
 using InvoicesErp.Services;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14650,8 +14965,7 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
-// Verify DB connectivity and seed the default admin if the AppUsers table is empty.
-// Schema is created manually in SQL Server (SSMS); no DDL is executed at startup.
+// Verify DB connectivity, initialize the supply catalog schema, and seed the default admin.
 try
 {
     using var scope = app.Services.CreateScope();
@@ -14659,6 +14973,24 @@ try
 
     if (await db.Database.CanConnectAsync())
     {
+        // The standalone supply catalog is an authorized feature schema addition.
+        // Apply its idempotent SQL batches when the configured database is available.
+        var supplySchemaPath = Path.Combine(app.Environment.ContentRootPath, "Database", "SupplyCatalogSchema.sql");
+        if (File.Exists(supplySchemaPath))
+        {
+            var supplySchema = await File.ReadAllTextAsync(supplySchemaPath);
+            foreach (var batch in Regex.Split(supplySchema, @"(?im)^\s*GO\s*;?\s*$")
+                         .Where(sql => !string.IsNullOrWhiteSpace(sql)))
+            {
+                await db.Database.ExecuteSqlRawAsync(batch);
+            }
+            app.Logger.LogInformation("Supply catalog schema is ready.");
+        }
+        else
+        {
+            app.Logger.LogWarning("Supply catalog schema script was not found at {SchemaPath}.", supplySchemaPath);
+        }
+
         await UserStore.SeedAdminAsync(db);
     }
     else
@@ -22778,6 +23110,195 @@ body.mobile-select-open { overflow: hidden; }
     border-radius: 16px;
     background: linear-gradient(145deg, #f8fbff, #fff 72%);
 }
+.supply-page-head { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom:18px; }
+.supply-page-head h2 { margin:0 0 6px; color:#17324d; }
+.supply-page-head p { margin:0; color:#64748b; line-height:1.7; max-width:760px; }
+.supply-page-total { padding:12px 16px; border-radius:12px; background:#eef6ff; color:#334155; white-space:nowrap; }
+.supply-page-total strong { color:#075985; margin-inline-start:8px; }
+.supply-entry-panel { margin:18px 0; padding:18px; border:1px solid #dbe5f0; border-radius:16px; background:linear-gradient(145deg,#f8fbff,#fff 72%); }
+.supply-entry-panel h3 { margin:0 0 14px; color:#17324d; font-size:1rem; }
+.supply-entry-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.supply-project-picker-group { position:relative; z-index:5; }
+.supply-project-picker { position:relative; }
+.supply-project-picker-trigger { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:44px; text-align:start; background:#fff; color:#64748b; }
+.supply-project-picker-trigger.has-selection { color:#17324d; border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.08); }
+.supply-project-picker-trigger svg { width:18px; height:18px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.7; transition:transform .18s ease; }
+.supply-project-picker-trigger[aria-expanded="true"] svg { transform:rotate(180deg); }
+.supply-project-picker-menu { position:absolute; inset-inline:0; top:calc(100% + 7px); z-index:30; overflow:hidden; border:1px solid #d9e3ef; border-radius:14px; background:#fff; box-shadow:0 18px 45px rgba(15,35,60,.18); }
+.supply-project-picker-menu[hidden] { display:none; }
+.supply-project-search { position:relative; display:block; padding:12px; border-bottom:1px solid #edf1f6; }
+.supply-project-search input { padding-inline-end:40px; }
+.supply-project-search svg { position:absolute; inset-inline-end:24px; top:24px; width:18px; height:18px; fill:none; stroke:#94a3b8; stroke-width:1.6; pointer-events:none; }
+.supply-project-options { max-height:250px; overflow:auto; padding:6px; }
+.supply-project-option { display:flex; align-items:center; gap:10px; min-height:54px; padding:9px 10px; border-radius:9px; cursor:pointer; transition:background .15s ease; }
+.supply-project-option:hover { background:#f6f9fd; }
+.supply-project-option[aria-selected="true"] { background:#eff6ff; }
+.supply-project-option[hidden] { display:none; }
+.supply-project-option input { position:absolute; width:1px; height:1px; opacity:0; }
+.supply-project-checkbox { display:grid; place-items:center; width:19px; height:19px; flex:0 0 19px; border:1.5px solid #cbd5e1; border-radius:5px; background:white; color:white; }
+.supply-project-checkbox svg { width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2; opacity:0; }
+.supply-project-option input:checked + .supply-project-checkbox { border-color:#2563eb; background:#2563eb; }
+.supply-project-option input:checked + .supply-project-checkbox svg { opacity:1; }
+.supply-project-option input:focus-visible + .supply-project-checkbox { outline:3px solid rgba(37,99,235,.25); }
+.supply-project-option-copy { display:grid; gap:3px; min-width:0; flex:1; }
+.supply-project-option-copy strong { overflow:hidden; color:#1e293b; text-overflow:ellipsis; white-space:nowrap; font-size:.87rem; }
+.supply-project-option-copy small { color:#8794a5; font-size:.75rem; }
+.supply-project-option-index { color:#a0acba; font-size:.72rem; font-variant-numeric:tabular-nums; }
+.supply-project-picker-footer { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 12px; border-top:1px solid #edf1f6; color:#64748b; font-size:.78rem; }
+.supply-project-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.supply-project-chip { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:4px 8px 4px 5px; border:1px solid #bfdbfe; border-radius:999px; background:#eff6ff; color:#1d4ed8; font-size:.75rem; }
+.supply-project-chip button { display:grid; place-items:center; width:18px; height:18px; border:0; border-radius:50%; background:transparent; color:#1d4ed8; cursor:pointer; font-size:1rem; line-height:1; }
+.supply-project-chip button:hover { background:#dbeafe; }
+.supply-project-no-results { padding:18px 12px; color:#94a3b8; text-align:center; font-size:.83rem; }
+.supplies-workspace { padding:clamp(14px,2.4vw,30px); }
+.supplies-page-header { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:4px 2px 24px; }
+.supplies-page-heading { min-width:0; }
+.supplies-eyebrow { color:#2563eb; font-size:.75rem; font-weight:700; letter-spacing:.04em; }
+.supplies-page-heading h2 { margin:5px 0 6px; color:#152d46; font-size:clamp(1.45rem,2.3vw,2rem); font-weight:750; }
+.supplies-page-heading p { margin:0; color:#718096; line-height:1.7; }
+.supplies-header-stat { display:grid; grid-template-columns:auto auto; align-items:center; gap:2px 10px; padding:14px 18px; border:1px solid #dbeafe; border-radius:14px; background:linear-gradient(135deg,#f3f8ff,#fff); }
+.supplies-header-stat span { grid-column:1/-1; color:#64748b; font-size:.78rem; }
+.supplies-header-stat strong { color:#123e70; font-size:1.35rem; font-variant-numeric:tabular-nums; }
+.supplies-header-stat small { color:#94a3b8; }
+.supplies-flow-tabs { display:flex; align-items:stretch; gap:12px; margin-bottom:24px; padding:6px; border:1px solid #e6edf5; border-radius:16px; background:#f7f9fc; }
+.supplies-flow-tab { display:flex; align-items:center; gap:12px; flex:1; min-width:0; padding:13px 16px; border:1px solid transparent; border-radius:12px; background:transparent; color:#64748b; text-align:start; cursor:pointer; transition:background .18s,border-color .18s,box-shadow .18s; }
+.supplies-flow-tab:hover { background:#fff; }
+.supplies-flow-tab.active { border-color:#dce8f8; background:#fff; color:#17324d; box-shadow:0 3px 12px rgba(15,35,60,.06); }
+.supplies-step-number { display:grid; place-items:center; width:36px; height:36px; flex:0 0 36px; border-radius:11px; background:#edf2f8; color:#6b7c90; font-size:.78rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.supplies-flow-tab.active .supplies-step-number { background:#e9f2ff; color:#2563eb; }
+.supplies-flow-tab > span:last-child { display:grid; gap:4px; min-width:0; }
+.supplies-flow-tab strong { color:inherit; font-size:.9rem; }
+.supplies-flow-tab small { color:#8996a6; font-size:.75rem; line-height:1.45; }
+.supplies-flow-connector { align-self:center; width:32px; height:1px; background:#d6e0eb; }
+.supplies-flow-panel[hidden] { display:none !important; }
+.supplies-section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.supplies-section-heading h3 { margin:0 0 5px; color:#1e344b; font-size:1.08rem; }
+.supplies-section-heading p { margin:0; color:#7a8797; font-size:.82rem; line-height:1.6; }
+.supplies-record-count { padding:6px 10px; border-radius:999px; background:#eef4fb; color:#52667c; font-size:.75rem; white-space:nowrap; }
+.supply-entry-panel { margin:0 0 22px; padding:clamp(14px,2vw,22px); border:1px solid #e1e9f2; border-radius:16px; background:linear-gradient(145deg,#fbfdff,#fff 75%); }
+.supply-form-title { display:flex; align-items:center; gap:12px; margin-bottom:19px; }
+.supply-form-icon { display:grid; place-items:center; width:38px; height:38px; border-radius:12px; background:#eaf2ff; color:#2563eb; font-size:1.3rem; font-weight:400; }
+.supply-form-title h4,.supplies-table-card-head h4 { margin:0 0 4px; color:#20364d; font-size:.92rem; }
+.supply-form-title p,.supplies-table-card-head p { margin:0; color:#8290a0; font-size:.76rem; line-height:1.55; }
+.supply-entry-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px 16px; }
+.supply-entry-grid .form-group { min-width:0; }
+.supply-entry-grid .form-group label,.supply-catalog-select-card > label { margin-bottom:6px; color:#475569; font-size:.79rem; font-weight:650; }
+.supply-entry-grid .form-control,.supply-entry-grid .form-select,.supply-catalog-select-card .form-select { min-height:43px; border-color:#dce4ee; border-radius:9px; box-shadow:none; }
+.supply-entry-grid .form-control:focus,.supply-entry-grid .form-select:focus,.supply-catalog-select-card .form-select:focus { border-color:#82b1f3; box-shadow:0 0 0 3px rgba(37,99,235,.09); }
+.supply-note-field { grid-column:span 2; }
+.supply-entry-footer { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:19px; padding-top:16px; border-top:1px solid #edf1f5; }
+.supply-calculated-total { display:flex; align-items:baseline; gap:8px; color:#6c7b8d; font-size:.8rem; }
+.supply-calculated-total strong { color:#123e70; font-size:1.25rem; font-variant-numeric:tabular-nums; }
+.supply-calculated-total small { color:#96a1af; }
+.supplies-table-card,.supply-project-allocation-card,.supply-catalog-select-card,.supply-assignment-history { min-width:0; border:1px solid #e4ebf3; border-radius:15px; background:#fff; }
+.supplies-table-card { overflow:hidden; }
+.supplies-table-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 17px; }
+.supplies-table-card .data-table-wrapper { border-top:1px solid #edf1f5; }
+.supply-table-secondary { display:block; margin-top:4px; color:#8492a2; font-size:.75rem; }
+.supply-available-badge { display:inline-block; padding:4px 8px; border-radius:999px; background:#ecfdf5; color:#087b58; font-size:.77rem; white-space:nowrap; }
+.supply-assign-layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(260px,.75fr); align-items:start; gap:18px; }
+.supply-assign-main { display:grid; gap:15px; min-width:0; }
+.supply-catalog-select-card { padding:17px; }
+.supply-catalog-select-card > label { display:block; font-size:.92rem; font-weight:700; color:#334a62; }
+.supply-assignment-summary { display:flex; align-items:center; gap:14px; margin-top:13px; padding:14px 16px; border:1px solid #dcebe7; border-radius:11px; background:#f6fcfa; }
+.supply-assignment-summary.is-empty { border-color:#e7edf4; background:#f8fafc; color:#718096; }
+.supply-summary-mark { display:grid; place-items:center; width:24px; height:24px; flex:0 0 24px; border-radius:50%; background:#dcfce7; color:#15803d; font-size:.78rem; font-weight:800; }
+.supply-assignment-summary.is-empty .supply-summary-mark { background:#e9eef5; color:#718096; }
+.supply-summary-details { display:flex; align-items:center; gap:18px; flex:1; min-width:0; }
+.supply-summary-heading { display:grid; gap:5px; min-width:0; }
+.supply-assignment-summary .supply-summary-heading > strong { color:#1e3a56; font-size:1.04rem; }
+.supply-assignment-summary .supply-summary-heading > small { color:#52667c; font-size:.9rem; line-height:1.6; }
+.supply-summary-metrics { display:flex; align-items:stretch; justify-content:space-around; gap:18px; flex:1; min-width:0; }
+.supply-summary-metric { display:grid; align-content:center; gap:4px; min-width:0; }
+.supply-assignment-summary .supply-summary-metric > small { color:#425a72; font-size:.88rem; font-weight:650; line-height:1.4; }
+.supply-assignment-summary .supply-summary-metric > strong { color:#123e70; font-size:1.45rem; font-weight:800; line-height:1.2; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.supply-assignment-summary .supply-summary-metric > strong small { color:#52667c; font-size:.85rem; font-weight:600; }
+.supply-project-allocation-card { padding:4px 0 0; overflow:hidden; }
+.supply-project-allocation-card .supplies-table-card-head { padding:15px 17px; }
+.supply-project-allocation-list { max-height:390px; overflow:auto; padding:0 12px; }
+.supply-project-allocation-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(145px,.42fr); align-items:center; gap:12px; padding:12px 8px; border-top:1px solid #eff2f6; }
+.supply-allocation-select { display:flex; align-items:center; gap:11px; min-width:0; cursor:pointer; }
+.supply-allocation-check input { position:absolute; width:1px; height:1px; opacity:0; }
+.supply-allocation-check > span { display:block; width:18px; height:18px; border:1.5px solid #cbd5e1; border-radius:5px; background:#fff; }
+.supply-allocation-check input:checked + span { border-color:#2563eb; background:#2563eb; box-shadow:inset 0 0 0 4px #fff; }
+.supply-allocation-check input:focus-visible + span { outline:3px solid rgba(37,99,235,.2); }
+.supply-allocation-project { display:grid; gap:3px; min-width:0; }
+.supply-allocation-project strong { overflow:hidden; color:#30465d; font-size:.92rem; text-overflow:ellipsis; white-space:nowrap; }
+.supply-allocation-project small { overflow:hidden; color:#66788c; font-size:.82rem; text-overflow:ellipsis; white-space:nowrap; }
+.supply-allocation-qty { display:grid; gap:5px; color:#52667c; font-size:.82rem; }
+.supply-allocation-qty > span { display:flex; align-items:center; gap:6px; }
+.supply-allocation-qty input { min-width:0; min-height:36px; padding:5px 8px; border-radius:8px; font-size:.8rem; }
+.supply-allocation-qty input:disabled { background:#f4f6f9; }
+.supply-allocation-qty small { color:#96a1af; white-space:nowrap; }
+.supply-allocation-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; border-top:1px solid #e9eef4; background:#f8fafc; color:#65758a; font-size:.8rem; }
+.supply-allocation-footer strong { color:#153f6b; font-size:1.02rem; font-variant-numeric:tabular-nums; }
+.supply-allocation-footer small { margin-inline-start:5px; color:#8b98a8; font-size:.72rem; font-weight:400; }
+.supply-assign-actions { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.supply-assign-actions [role="status"] { color:#748397; font-size:.78rem; line-height:1.5; }
+.supply-assign-actions .btn:disabled { opacity:.5; cursor:not-allowed; }
+.supply-assignment-history { overflow:hidden; }
+.supply-project-allocation-row { grid-template-columns:minmax(130px,1.3fr) minmax(120px,.8fr) minmax(130px,.8fr) minmax(105px,.6fr); }
+.supply-project-line-total { display:grid; align-content:center; gap:5px; color:#52667c; font-size:.82rem; }
+.supply-project-line-total strong { color:var(--navy,#17324d); font-size:.94rem; }
+.supply-catalog-layout { display:grid; grid-template-columns:minmax(330px,.78fr) minmax(0,1.22fr); align-items:start; gap:16px; margin-bottom:24px; }
+.supply-catalog-layout .supply-entry-panel { height:100%; margin:0; }
+.supply-catalog-layout .supplies-table-card { min-width:0; }
+#suppliesView .supplies-flow-panel { scroll-margin-top:20px; }
+#suppliesView .supplies-flow-tabs { position:sticky; top:0; z-index:4; }
+#suppliesView .supply-allocation-footer { justify-content:flex-start; flex-wrap:wrap; }
+#suppliesView .supply-allocation-footer strong { margin-inline-end:auto; }
+#suppliesView .supply-catalog-layout .supply-entry-grid { grid-template-columns:minmax(0,1fr); }
+@media (max-width:1100px) {
+    #suppliesView .supply-catalog-layout { grid-template-columns:minmax(0,1fr); }
+    #suppliesView .supply-catalog-layout .supply-entry-panel { height:auto; }
+}
+@media (min-width:901px) {
+    #suppliesView .supply-project-allocation-row { grid-template-columns:minmax(155px,1.25fr) minmax(120px,.72fr) minmax(140px,.78fr) minmax(105px,.6fr); }
+}
+
+/* Material deductions select project supplies and calculate from saved project prices. */
+#deductionCardsContainer .deduction-card.is-materials-deduction .deduction-calc-type-group,
+#deductionCardsContainer .deduction-card.is-materials-deduction .deduction-base-group,
+#deductionCardsContainer .deduction-card.is-materials-deduction .deduction-manual-value-group { display:none; }
+#deductionCardsContainer .ded-materials-list { display:grid; gap:8px; max-height:360px; overflow-y:auto; padding-inline-end:4px; }
+#deductionCardsContainer .ded-material-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(140px,.32fr); align-items:center; gap:14px; padding:12px; border:1px solid #e3eaf2; border-radius:11px; background:#fff; }
+#deductionCardsContainer .ded-material-choice { display:flex; align-items:center; gap:11px; min-width:0; cursor:pointer; }
+#deductionCardsContainer .ded-material-choice > input { width:17px; height:17px; flex:0 0 17px; accent-color:#2563eb; }
+#deductionCardsContainer .ded-material-choice > span { display:grid; gap:4px; min-width:0; }
+#deductionCardsContainer .ded-material-choice strong { color:#30465d; font-size:.84rem; }
+#deductionCardsContainer .ded-material-choice small { color:#7f8da0; font-size:.75rem; line-height:1.5; }
+#deductionCardsContainer .ded-material-quantity { display:grid; gap:5px; color:#62748a; font-size:.76rem; }
+#deductionCardsContainer .ded-material-quantity .form-control { min-height:38px; }
+#deductionCardsContainer .ded-material-quantity .form-control:disabled { background:#f3f6fa; }
+@media (max-width:620px) {
+    #deductionCardsContainer .ded-material-row { grid-template-columns:minmax(0,1fr); gap:10px; }
+    #deductionCardsContainer .ded-material-quantity { padding-inline-start:28px; }
+}
+.supply-history-heading { display:flex; align-items:center; gap:11px; padding:16px; border-bottom:1px solid #edf1f5; }
+.supply-history-icon { display:grid; place-items:center; width:35px; height:35px; border-radius:11px; background:#eef6ff; color:#2563eb; font-size:1.1rem; }
+.supply-history-heading h4 { margin:0 0 4px; color:#29415a; font-size:.88rem; }
+.supply-history-heading p { margin:0; color:#8a97a7; font-size:.72rem; }
+.supply-history-list { display:grid; gap:2px; max-height:430px; overflow:auto; padding:8px 12px; }
+.supply-history-row { display:flex; align-items:center; gap:9px; padding:10px 3px; border-bottom:1px solid #f0f3f6; }
+.supply-history-project-mark { display:grid; place-items:center; width:31px; height:31px; flex:0 0 31px; border-radius:10px; background:#f0f5fa; color:#49657f; font-size:.77rem; font-weight:700; }
+.supply-history-project { display:grid; gap:3px; flex:1; min-width:0; }
+.supply-history-project strong { overflow:hidden; color:#40566c; font-size:.77rem; text-overflow:ellipsis; white-space:nowrap; }
+.supply-history-project small { color:#9aa5b2; font-size:.68rem; }
+.supply-history-row > b { color:#087b58; font-size:.76rem; white-space:nowrap; }
+@media (max-width:900px) { .supply-entry-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .supply-assign-layout { grid-template-columns:minmax(0,1fr); } .supply-assignment-history { order:2; } }
+@media (max-width:620px) { .supplies-workspace { padding:12px; } .supplies-page-header { align-items:flex-start; flex-direction:column; gap:14px; } .supplies-header-stat { width:100%; } .supplies-flow-tabs { gap:5px; padding:4px; } .supplies-flow-tab { gap:8px; padding:10px 8px; } .supplies-step-number { width:30px; height:30px; flex-basis:30px; border-radius:9px; } .supplies-flow-tab strong { font-size:.77rem; } .supplies-flow-tab small { font-size:.67rem; } .supplies-flow-connector { width:10px; } .supply-entry-grid { grid-template-columns:minmax(0,1fr); } .supply-note-field { grid-column:auto; } .supply-entry-footer { align-items:stretch; flex-direction:column; } .supply-entry-footer .btn { width:100%; } .supply-project-allocation-row { grid-template-columns:20px minmax(0,1fr); gap:9px; } .supply-allocation-qty { grid-column:2; } .supply-assign-actions { align-items:stretch; flex-direction:column; } .supply-assign-actions .btn { width:100%; } }
+.supply-entry-footer { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:14px; padding-top:14px; border-top:1px solid #e2e8f0; }
+.supply-entry-footer strong { color:#0f766e; margin-inline-start:8px; }
+.supply-table-wrap { margin-top:18px; }
+.ded-materials-list { display:grid; gap:8px; margin-top:8px; }
+.ded-material-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border:1px solid #dbe5f0; border-radius:10px; background:#fff; }
+.ded-material-row > span { display:grid; gap:4px; min-width:0; }
+.ded-material-row small { color:#64748b; }
+.ded-material-qty { width:120px; flex:0 0 120px; }
+.ded-materials-total { display:block; margin-top:9px; font-weight:700; color:#0f766e; }
+@media (max-width:900px) { .supply-entry-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:600px) { .supply-page-head { flex-direction:column; } .supply-entry-grid { grid-template-columns:minmax(0,1fr); } .supply-entry-panel { padding:13px; } .supply-entry-footer { align-items:stretch; flex-direction:column; } }
+@media (max-width:480px) { .ded-material-row { align-items:stretch; flex-direction:column; } .ded-material-qty { width:100%; flex-basis:auto; } }
 .supply-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .supply-section-heading h4 { margin: 0 0 5px; color: #17324d; font-size: 1rem; }
 .supply-section-heading p { margin: 0; color: #64748b; font-size: .83rem; line-height: 1.65; }
@@ -22837,10 +23358,223 @@ body.mobile-select-open { overflow: hidden; }
     .supply-section-heading { flex-direction: column; }
     .supply-section-heading > .btn { align-self: flex-start; }
 }
+
+/* Final responsive overrides for the two-step supplies workspace. */
+@media (max-width: 900px) {
+    #suppliesView .supply-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+    #suppliesView .supply-entry-grid { grid-template-columns: minmax(0, 1fr); }
+    #suppliesView .supply-note-field { grid-column: auto; }
+    #suppliesView .supplies-flow-tabs { align-items: stretch; }
+    #suppliesView .supplies-flow-tab { flex: 1 1 0; }
+    #suppliesView .supplies-flow-connector { width: 5px; flex: 0 0 5px; }
+    #suppliesView .supplies-table-card .data-table-wrapper { overflow-x: auto; }
+    #suppliesView .supply-project-allocation-row { grid-template-columns:minmax(0,1fr); gap:9px; }
+    #suppliesView .supply-allocation-qty { grid-column:auto; padding-inline-start:29px; }
+}
+
+/* Supplies workspace: improve hierarchy and prevent labels/content collisions. */
+#suppliesView,
+#suppliesView * { box-sizing:border-box; }
+#suppliesView .supplies-workspace { min-width:0; }
+#suppliesView .supplies-page-header { align-items:flex-start; }
+#suppliesView .supplies-page-heading p,
+#suppliesView .supplies-section-heading p,
+#suppliesView .supply-form-title p,
+#suppliesView .supplies-table-card-head p { max-width:68ch; overflow-wrap:anywhere; }
+#suppliesView .supplies-header-stat { min-width:210px; }
+#suppliesView .supplies-header-stat strong,
+#suppliesView .supply-calculated-total strong,
+#suppliesView .supply-allocation-footer strong { direction:ltr; unicode-bidi:isolate; }
+#suppliesView .supply-optional-label { margin-inline-start:5px; color:#8794a5; font-size:.72rem; font-weight:400; }
+#suppliesView .supply-entry-grid { align-items:start; }
+#suppliesView .supply-entry-grid .form-group { gap:7px; }
+#suppliesView .supply-entry-grid label,
+#suppliesView .supply-catalog-select-card > label,
+#suppliesView .supply-allocation-qty > label { display:block; line-height:1.5; }
+#suppliesView .form-control,
+#suppliesView .form-select { min-width:0; max-width:100%; }
+#suppliesView .supply-entry-footer { flex-wrap:wrap; }
+#suppliesView .supply-calculated-total { flex-wrap:wrap; row-gap:2px; }
+#suppliesView .supplies-table-card .data-table-wrapper { max-height: min(56vh, 620px); }
+#suppliesView .supplies-table-card .data-table { min-width:920px; }
+#suppliesView .supplies-table-card .data-table th,
+#suppliesView .supplies-table-card .data-table td { vertical-align:middle; }
+#suppliesView .supplies-table-card .data-table td:first-child { min-width:170px; white-space:normal; }
+#suppliesView .supplies-table-card .data-table td:first-child strong,
+#suppliesView .supplies-table-card .data-table td:first-child small { overflow-wrap:anywhere; }
+#suppliesView .supplies-flow-tab { min-height:72px; }
+#suppliesView .supplies-flow-tab small { overflow-wrap:anywhere; }
+#suppliesView .supplies-section-heading { align-items:flex-start; }
+#suppliesView .supply-assignment-summary > span:last-child { min-width:0; overflow-wrap:anywhere; }
+#suppliesView .supply-assignment-summary small { line-height:1.7; }
+#suppliesView .supply-allocation-project,
+#suppliesView .supply-history-project { min-width:0; }
+#suppliesView .supply-allocation-project strong,
+#suppliesView .supply-allocation-project small,
+#suppliesView .supply-history-project strong { overflow-wrap:anywhere; }
+#suppliesView .supply-assign-actions [role="status"] { min-width:0; overflow-wrap:anywhere; }
+#suppliesView.active { min-height:0; }
+#content-area:has(#suppliesView.active) { overscroll-behavior-y:contain; }
+#suppliesView .supply-project-allocation-list { overscroll-behavior-y:contain; }
+
+@media (max-width:900px) {
+    #suppliesView .supplies-page-header { gap:16px; }
+    #suppliesView .supplies-table-card .data-table { min-width:880px; }
+    #suppliesView .supply-assign-layout { grid-template-columns:minmax(0,1fr); }
+    #suppliesView .supply-assignment-history { order:initial; }
+}
+
+@media (max-width:620px) {
+    #suppliesView .supplies-workspace { padding:16px; }
+    #suppliesView .supplies-page-header { flex-direction:column; align-items:stretch; padding-bottom:18px; }
+    #suppliesView .supplies-header-stat { width:100%; min-width:0; grid-template-columns:minmax(0,1fr) auto auto; }
+    #suppliesView .supplies-header-stat span { grid-column:1/-1; }
+    #suppliesView .supplies-flow-tabs { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
+    #suppliesView .supplies-flow-connector { display:none; }
+    #suppliesView .supplies-flow-tab { width:100%; min-height:64px; padding:11px 12px; }
+    #suppliesView .supplies-flow-tab strong { font-size:.88rem; }
+    #suppliesView .supplies-flow-tab small { font-size:.74rem; }
+    #suppliesView .supplies-section-heading { flex-direction:column; gap:8px; }
+    #suppliesView .supplies-record-count { align-self:flex-start; }
+    #suppliesView .supply-entry-panel { padding:16px; }
+    #suppliesView .supply-form-title { align-items:flex-start; }
+    #suppliesView .supply-entry-footer { align-items:stretch; flex-direction:column; }
+    #suppliesView .supply-calculated-total { justify-content:space-between; padding:2px 0 8px; }
+    #suppliesView .supply-entry-footer .btn { width:100%; min-height:46px; white-space:normal; }
+    #suppliesView .supplies-table-card .data-table-wrapper { max-height:none; overflow:visible; }
+    #suppliesView .supplies-table-card .data-table { display:block; min-width:0; width:100%; }
+    #suppliesView .supplies-table-card .data-table thead { display:none; }
+    #suppliesView .supplies-table-card .data-table tbody { display:grid; gap:12px; padding:12px; }
+    #suppliesView .supplies-table-card .data-table tbody tr { display:grid; gap:0; padding:8px 12px; border:1px solid #e3eaf2; border-radius:12px; background:#fff; box-shadow:0 2px 8px rgba(24,48,74,.04); }
+    #suppliesView .supplies-table-card .data-table tbody tr:hover { background:#fff; }
+    #suppliesView .supplies-table-card .data-table tbody td { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; width:100%; min-width:0; padding:9px 0; border-bottom:1px solid #eef2f6; text-align:start; white-space:normal; }
+    #suppliesView .supplies-table-card .data-table tbody td::before { content:attr(data-label); flex:0 0 42%; color:#708095; font-size:.76rem; font-weight:650; line-height:1.5; }
+    #suppliesView .supplies-table-card .data-table tbody td:first-child { display:block; min-width:0; padding-top:8px; }
+    #suppliesView .supplies-table-card .data-table tbody td:first-child::before { display:block; margin-bottom:5px; }
+    #suppliesView .supplies-table-card .data-table tbody td:last-child { justify-content:flex-end; border-bottom:0; }
+    #suppliesView .supplies-table-card .data-table tbody td:last-child::before { margin-inline-end:auto; }
+    #suppliesView .supplies-table-card .data-table tbody td .btn { min-width:104px; min-height:38px; }
+    #suppliesView .supplies-table-card .data-table tbody td.supply-empty-state { display:block; }
+    #suppliesView .supplies-table-card .data-table tbody td.supply-empty-state::before { display:none; }
+    #suppliesView .supply-catalog-select-card { padding:15px; }
+    #suppliesView .supply-project-allocation-card .supplies-table-card-head { align-items:flex-start; flex-direction:column; }
+    #suppliesView .supply-project-allocation-card .supplies-table-card-head .btn { width:100%; min-height:40px; }
+    #suppliesView .supply-project-allocation-list { max-height: none; padding:0 12px; }
+    #suppliesView .supply-project-allocation-row { padding:13px 4px; }
+    #suppliesView .supply-allocation-qty { padding-inline-start:29px; }
+    #suppliesView .supply-allocation-qty > span { max-width:100%; }
+    #suppliesView .supply-assignment-summary { padding:11px; }
+    #suppliesView .supply-summary-details { align-items:stretch; flex-direction:column; gap:12px; }
+    #suppliesView .supply-summary-metrics { justify-content:space-between; gap:10px; }
+    #suppliesView .supply-assignment-summary .supply-summary-metric > strong { font-size:1.2rem; }
+    #suppliesView .supply-allocation-footer { align-items:flex-start; flex-direction:column; gap:5px; }
+    #suppliesView .supply-assign-actions { align-items:stretch; }
+    #suppliesView .supply-assign-actions .btn { width:100%; min-height:46px; white-space:normal; }
+    #suppliesView .supply-history-row { align-items:flex-start; flex-wrap:wrap; }
+    #suppliesView .supply-history-row > b { margin-inline-start:auto; }
+}
+
+@media (max-width:360px) {
+    #suppliesView .supplies-workspace { padding:12px; }
+    #suppliesView .supply-entry-panel { padding:13px; }
+    #suppliesView .supplies-step-number { width:28px; height:28px; flex-basis:28px; }
+    #suppliesView .supplies-table-card .data-table tbody td::before { flex-basis:38%; }
+}
+
+/* Supply catalog page: match the compact stepper + form + searchable table design. */
+#suppliesView .supplies-workspace { padding:14px 13px 18px; background:transparent !important; border:0; border-radius:0; box-shadow:none !important; }
+#suppliesView .supplies-page-header,
+#suppliesView #supplyCatalogPanel > .supplies-section-heading { display:none; }
+#suppliesView .supplies-flow-tabs { align-items:center; gap:18px; min-height:78px; margin:0 0 14px; padding:10px 16px; border:1px solid #e5edf7; border-radius:12px; background:rgba(255,255,255,.88); box-shadow:0 5px 18px rgba(30,58,95,.05); }
+#suppliesView .supplies-flow-tab { flex:0 1 34%; gap:10px; padding:7px 8px; color:#7183a1; }
+#suppliesView .supplies-flow-tab.active { border-color:transparent; background:transparent; box-shadow:none; }
+#suppliesView .supplies-step-number { width:30px; height:30px; flex-basis:30px; border-radius:50%; background:#e5eaf2; color:#526783; font-size:.82rem; }
+#suppliesView .supplies-flow-tab.active .supplies-step-number { background:#203d70; color:#fff; }
+#suppliesView .supplies-flow-tab strong { color:#274269; font-size:.88rem; }
+#suppliesView .supplies-flow-tab small { color:#8797b0; font-size:.72rem; }
+#suppliesView .supplies-flow-connector { position:relative; width:auto; height:1px; flex:1; background:#dfe7f1; }
+#suppliesView .supply-catalog-layout { grid-template-columns:minmax(250px,.68fr) minmax(0,1.48fr); align-items:stretch; gap:12px; margin:0; }
+#suppliesView .supply-entry-panel,
+#suppliesView .supplies-table-card { min-height:438px; margin:0; border:1px solid #e4ebf4; border-radius:12px; background:rgba(255,255,255,.94); box-shadow:0 5px 18px rgba(30,58,95,.045); }
+#suppliesView .supply-entry-panel { display:flex; flex-direction:column; gap:20px; padding:18px 16px; }
+#suppliesView .supply-form-title { align-items:center; gap:10px; margin:0; }
+#suppliesView .supply-form-icon { width:30px; height:30px; flex:0 0 30px; border-radius:50%; background:#1d4ed8; color:white; font-size:1.2rem; }
+#suppliesView .supply-form-title h4 { margin:0 0 4px; color:#1f365d; font-size:.98rem; font-weight:750; }
+#suppliesView .supply-form-title p { color:#8a9ab2; font-size:.74rem; line-height:1.55; }
+#suppliesView .supply-entry-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+#suppliesView .supply-entry-grid .form-group { display:grid; gap:7px; }
+#suppliesView .supply-entry-grid label { color:#334b6c; font-size:.8rem; font-weight:700; }
+#suppliesView .supply-entry-grid label span { color:#dc2626; }
+#suppliesView .supply-entry-grid .form-control,
+#suppliesView .supply-entry-grid .form-select { min-height:42px; border:1px solid #e3eaf4; border-radius:9px; background-color:#fff; color:#526783; font-size:.79rem; }
+#suppliesView .supply-entry-grid .form-control::placeholder { color:#9aa9bf; }
+#suppliesView .supply-entry-footer { margin:auto 0 0; padding:0; border:0; }
+#suppliesView .supply-entry-footer .btn { width:100%; min-height:42px; border:0; border-radius:9px; background:#203d70; color:#fff; font-size:.84rem; font-weight:700; box-shadow:none; }
+#suppliesView .supply-entry-footer .btn span { margin-inline-end:5px; font-size:1.1rem; }
+#suppliesView .supply-form-hint { display:flex; align-items:flex-start; gap:8px; margin-top:5px; padding:12px 10px; border:1px solid #edf2f8; border-radius:9px; background:#f7faff; color:#637da4; font-size:.72rem; line-height:1.7; }
+#suppliesView .supply-form-hint > span:first-child { color:#2563eb; font-size:.95rem; }
+#suppliesView .supplies-table-card { display:flex; flex-direction:column; overflow:hidden; }
+#suppliesView .supplies-table-card-head { min-height:56px; padding:10px 14px; }
+#suppliesView .supplies-table-card-head h4 { display:flex; align-items:center; gap:8px; margin:0; color:#1f365d; font-size:.98rem; font-weight:750; white-space:nowrap; }
+#suppliesView .supplies-table-card-head h4 span { color:#1d4ed8; font-size:1.05rem; }
+#suppliesView .supply-catalog-search { display:flex; align-items:center; gap:7px; width:min(240px,48%); height:36px; padding:0 10px; border:1px solid #e4ebf4; border-radius:9px; color:#587094; }
+#suppliesView .supply-catalog-search > span { font-size:1.3rem; line-height:1; }
+#suppliesView .supply-catalog-search input { width:100%; min-width:0; height:32px; padding:0; border:0; outline:0; color:#344b6b; font:inherit; font-size:.74rem; background:transparent; }
+#suppliesView .supply-catalog-search input::placeholder { color:#91a0b7; }
+#suppliesView .supplies-table-card .data-table-wrapper { flex:1; max-height:none; overflow:auto; border-top:1px solid #edf1f6; }
+#suppliesView .supplies-table-card .data-table { width:100%; min-width:0; table-layout:fixed; border-collapse:separate; border-spacing:0; font-size:.74rem; }
+#suppliesView .supplies-table-card .data-table th { padding:10px 7px; border-bottom:1px solid #e9eef5; background:#f8faff; color:#4b6285; font-size:.7rem; font-weight:700; white-space:nowrap; }
+#suppliesView .supplies-table-card .data-table td { height:42px; padding:7px; border-bottom:1px solid #edf1f6; color:#526783; font-size:.72rem; }
+#suppliesView .supplies-table-card .data-table tbody tr:nth-child(even) td { background:#fafcff; }
+#suppliesView .supplies-table-card .data-table th:nth-child(1),
+#suppliesView .supplies-table-card .data-table td:nth-child(1) { width:5%; text-align:center; }
+#suppliesView .supplies-table-card .data-table th:nth-child(2),
+#suppliesView .supplies-table-card .data-table td:nth-child(2) { width:17%; }
+#suppliesView .supplies-table-card .data-table th:nth-child(3),
+#suppliesView .supplies-table-card .data-table td:nth-child(3) { width:11%; }
+#suppliesView .supplies-table-card .data-table th:nth-child(4),
+#suppliesView .supplies-table-card .data-table td:nth-child(4) { width:16%; }
+#suppliesView .supplies-table-card .data-table th:nth-child(5),
+#suppliesView .supplies-table-card .data-table td:nth-child(5) { width:41%; }
+#suppliesView .supplies-table-card .data-table th:nth-child(6),
+#suppliesView .supplies-table-card .data-table td:nth-child(6) { width:10%; text-align:center; }
+#suppliesView .supplies-table-card .data-table tbody td:first-child { min-width:0; white-space:nowrap; }
+#suppliesView .supplies-table-card .data-table tbody td:nth-child(2) strong { color:#334b6c; font-size:.76rem; }
+#suppliesView .supply-project-chips { display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
+#suppliesView .supply-project-chip { display:inline-flex; max-width:100%; padding:4px 8px; border:0; border-radius:999px; background:#edf4ff; color:#2460b4; font-size:.65rem; line-height:1.3; white-space:nowrap; }
+#suppliesView .supply-row-number { color:#617594; font-variant-numeric:tabular-nums; }
+#suppliesView .supply-row-action { width:30px; height:28px; border:1px solid #e5ebf4; border-radius:8px; background:#fff; color:#1d4ed8; font-size:1.15rem; line-height:1; cursor:pointer; }
+#suppliesView .supply-catalog-pagination { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:52px; padding:8px 12px; color:#7486a2; font-size:.68rem; }
+#suppliesView .supply-catalog-pagination > label { display:flex; align-items:center; gap:8px; }
+#suppliesView .supply-catalog-pagination select { height:30px; padding:2px 8px; border:1px solid #e3eaf4; border-radius:8px; background:#fff; color:#526783; font-size:.7rem; }
+#suppliesView .supply-catalog-page-controls { display:flex; align-items:center; gap:5px; }
+#suppliesView .supply-catalog-page-controls button { min-width:28px; height:28px; padding:0 7px; border:1px solid #e6ecf4; border-radius:7px; background:#fff; color:#526783; font-size:.7rem; cursor:pointer; }
+#suppliesView .supply-catalog-page-controls button.active { border-color:#203d70; background:#203d70; color:#fff; }
+#suppliesView .supply-catalog-page-controls button:disabled { opacity:.45; cursor:default; }
+@media (max-width:980px) {
+    #suppliesView .supply-catalog-layout { grid-template-columns:minmax(0,1fr); }
+    #suppliesView .supply-entry-panel { min-height:0; }
+    #suppliesView .supplies-table-card { min-height:400px; }
+}
+@media (max-width:620px) {
+    #suppliesView .supplies-workspace { padding:10px 8px; }
+    #suppliesView .supplies-flow-tabs { gap:5px; min-height:70px; padding:7px; }
+    #suppliesView .supplies-flow-tab { flex-basis:43%; gap:6px; padding:5px 2px; }
+    #suppliesView .supplies-flow-tab strong { font-size:.75rem; }
+    #suppliesView .supplies-flow-tab small { font-size:.64rem; }
+    #suppliesView .supplies-flow-connector { min-width:8px; }
+    #suppliesView .supplies-table-card { min-height:360px; }
+    #suppliesView .supplies-table-card-head { align-items:flex-start; flex-direction:column; }
+    #suppliesView .supply-catalog-search { width:100%; }
+    #suppliesView .supplies-table-card .data-table { min-width:690px; }
+    #suppliesView .supply-catalog-pagination { flex-wrap:wrap; }
+}
 </file>
 
 <file path="wwwroot/js/erp.js">
-import { erpApi } from "./api.js?v=2";
+import { erpApi } from "./api.js?v=3";
 import { renderDashboardCharts, resizeDashboardCharts } from "./dashboard-charts.js?v=15";
 import { createMultiFilter } from "./multi-filter.js?v=1";
 // flatpickr loaded globally via CDN
@@ -23821,6 +24555,7 @@ const PAGE_TO_MODULE = {
   dashboardView: "dashboard",
   ownersView: "owners",
   projectsView: "projects",
+  suppliesView: "projects",
   contractsView: "contracts",
   paymentValuesView: "contracts",
   invoicesView: "invoices",
@@ -24721,6 +25456,7 @@ async function initERP() {
   syncAllSocialInsuranceInvoices();
   populateDropdowns();
   applyGlobalFilters();
+  if (document.getElementById("suppliesView")?.classList.contains("active")) loadSuppliesPage();
   initFlatpickr();
   if (!loadedFromApi) clearDataState();
 }
@@ -25401,6 +26137,7 @@ function initCentralizedEventListeners() {
       const pageId = link.getAttribute("data-page");
       activatePage(pageId);
       applyGlobalFilters();
+      if (pageId === "suppliesView") loadSuppliesPage();
     });
   });
 
@@ -25525,15 +26262,21 @@ function initCentralizedEventListeners() {
   const btnAddProject = document.getElementById("btnAddProject");
   if (btnAddProject)
     btnAddProject.addEventListener("click", () => openProjectModal());
-  document.getElementById("btnAddProjectSupply")?.addEventListener("click", () => addProjectSupplyRow());
-  document.getElementById("projectSupplyRows")?.addEventListener("input", updateProjectSupplyTotal);
-  document.getElementById("projectSupplyRows")?.addEventListener("change", updateProjectSupplyTotal);
-  document.getElementById("projectSupplyRows")?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-remove-project-supply]")) {
-      event.target.closest(".project-supply-row")?.remove();
-      updateProjectSupplyTotal();
-    }
+  document.getElementById("supplyCatalogForm")?.addEventListener("submit", event => { event.preventDefault(); saveSupplyFromPage(); });
+  document.getElementById("supplyCatalogSearch")?.addEventListener("input", () => { supplyCatalogPage = 1; renderSupplyCatalog(); });
+  document.getElementById("supplyCatalogPageSize")?.addEventListener("change", () => { supplyCatalogPage = 1; renderSupplyCatalog(); });
+  document.getElementById("supplyCatalogPageControls")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-supply-page]");
+    if (!button || button.disabled) return;
+    supplyCatalogPage = Number(button.dataset.supplyPage) || 1;
+    renderSupplyCatalog();
   });
+  document.querySelectorAll("[data-supply-tab]").forEach(button => button.addEventListener("click", () => setSupplyWorkspaceTab(button.dataset.supplyTab)));
+  document.getElementById("supplyCatalogSelect")?.addEventListener("change", loadSupplyAssignmentDetail);
+  document.getElementById("supplyProjectAllocations")?.addEventListener("input", updateSupplyAssignmentTotal);
+  document.getElementById("supplyProjectAllocations")?.addEventListener("change", updateSupplyAssignmentTotal);
+  document.getElementById("btnSaveSupplyAssignments")?.addEventListener("click", saveSupplyAssignments);
+  document.getElementById("btnSelectAllSupplyProjects")?.addEventListener("click", toggleAllSupplyProjects);
   document.getElementById("btnRefreshContractSupplies")?.addEventListener("click", loadContractSupplies);
   document.getElementById("btnAssignContractSupplies")?.addEventListener("click", assignContractSupplies);
   ["contractModifiedAmount", "contractVoAmount", "contractClaimsAmount", "contractVatAmount"].forEach(id => document.getElementById(id)?.addEventListener("input", updateContractSupplyPreview));
@@ -29803,55 +30546,211 @@ function initSectorManagerCombobox() {
   });
 }
 
-const PROJECT_SUPPLY_UNITS = ["عدد", "قطعة", "شيكارة", "كيس", "طن", "كيلوجرام", "جرام", "متر", "متر طولي", "متر مربع", "متر مكعب", "لتر", "جالون", "لوح", "لفة", "كرتونة", "نقلة", "طقم", "يوم", "ساعة"];
-
-function addProjectSupplyRow(item = null) {
-  const host = document.getElementById("projectSupplyRows");
-  if (!host) return;
-  const units = PROJECT_SUPPLY_UNITS.map(u => `<option value="${escapeHtml(u)}" ${item?.unit === u ? "selected" : ""}>${escapeHtml(u)}</option>`).join("");
-  const row = document.createElement("div");
-  row.className = "project-supply-row";
-  row.innerHTML = `<div class="form-group"><label>وصف التوريدة *</label><input class="form-control" data-supply-description maxlength="500" value="${escapeHtml(item?.description || "")}" placeholder="مثال: أسمنت بورتلاند"></div>
-    <div class="form-group"><label>الوحدة *</label><select class="form-select" data-supply-unit><option value="">اختر الوحدة</option>${units}</select></div>
-    <div class="form-group"><label>الكمية *</label><input class="form-control" type="number" min="0.01" step="0.01" data-supply-qty value="${item?.qty ?? ""}"></div>
-    <div class="form-group"><label>سعر الوحدة *</label><input class="form-control" type="number" min="0" step="0.01" data-supply-price value="${item?.unitPrice ?? ""}"></div>
-    <div class="form-group"><label>تاريخ التوريد *</label><input class="form-control" type="date" data-supply-date value="${item?.supplyDate || getTodayLocal()}"></div>
-    <div class="form-group"><label>ملاحظات</label><input class="form-control" data-supply-note maxlength="1000" value="${escapeHtml(item?.note || "")}" placeholder="اختياري"></div>
-    <div class="project-supply-row-footer"><span>الإجمالي التقديري <strong data-supply-total>0.00</strong></span><button type="button" class="btn btn-ghost btn-sm" data-remove-project-supply aria-label="حذف صف التوريدة">حذف</button></div>`;
-  host.appendChild(row);
-  updateProjectSupplyTotal();
+function getProjectSupplyItems(projectId) {
+  return erpApi.projects?.supplyItems
+    ? erpApi.projects.supplyItems(projectId)
+    : erpApi.request(`/projects/${encodeURIComponent(projectId)}/supply-items`, { method: "GET" });
 }
 
-function updateProjectSupplyTotal() {
-  let total = 0;
-  document.querySelectorAll(".project-supply-row").forEach(row => {
-    const qty = Number(row.querySelector("[data-supply-qty]")?.value) || 0;
-    const price = Number(row.querySelector("[data-supply-price]")?.value) || 0;
-    const line = Math.round(qty * price * 100) / 100;
-    total += line;
-    const label = row.querySelector("[data-supply-total]");
-    if (label) label.textContent = fmtNum(line);
-  });
-  const out = document.getElementById("projectSuppliesTotal");
-  if (out) out.textContent = fmtNum(total);
-}
-
-function collectProjectSupplyRows() {
-  const rows = [...document.querySelectorAll(".project-supply-row")];
-  const result = [];
-  for (const row of rows) {
-    const description = row.querySelector("[data-supply-description]").value.trim();
-    const unit = row.querySelector("[data-supply-unit]").value;
-    const qty = Number(row.querySelector("[data-supply-qty]").value);
-    const unitPrice = Number(row.querySelector("[data-supply-price]").value);
-    const supplyDate = row.querySelector("[data-supply-date]").value;
-    const note = row.querySelector("[data-supply-note]").value.trim();
-    if (![description, unit, row.querySelector("[data-supply-qty]").value, row.querySelector("[data-supply-price]").value, supplyDate].some(Boolean)) continue;
-    if (!description || !unit || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !supplyDate)
-      throw new Error("استكملي وصف ووحدة وكمية وسعر وتاريخ كل توريدة بدأتي إدخالها.");
-    result.push({ payload: { description, unit, qty, unitPrice, supplyDate, note: note || null }, row });
+async function loadSuppliesPage() {
+  const unitSelect = document.getElementById("supplyUnit");
+  if (!unitSelect) return;
+  try {
+    const catalog = await erpApi.supplyCatalog.list();
+    state.supplyCatalog = catalog || [];
+    renderSupplyCatalog();
+    const select = document.getElementById("supplyCatalogSelect");
+    const selectedId = select?.value;
+    if (select) select.innerHTML = '<option value="">اختر توريدة من السجل</option>' + state.supplyCatalog.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.type)} · ${escapeHtml(item.unit)}</option>`).join("");
+    if (selectedId && state.supplyCatalog.some(item => item.id === selectedId)) select.value = selectedId;
+    if (select?.value) await loadSupplyAssignmentDetail();
+  } catch (error) {
+    console.error("Could not load supply catalog", error);
+    document.getElementById("suppliesTableBody").innerHTML = `<tr><td colspan="5" class="supply-empty-state supply-error">تعذر تحميل سجل التوريدات: ${escapeHtml(error.message || "")}</td></tr>`;
   }
-  return result;
+}
+
+let supplyCatalogPage = 1;
+
+function renderSupplyCatalog() {
+  const body = document.getElementById("suppliesTableBody");
+  if (!body) return;
+  const allRows = state.supplyCatalog || [];
+  const query = document.getElementById("supplyCatalogSearch")?.value.trim().toLocaleLowerCase() || "";
+  const rows = allRows.filter(item => [item.type, item.unit, ...(item.projectNames || [])].join(" ").toLocaleLowerCase().includes(query));
+  const pageSize = Math.max(1, Number(document.getElementById("supplyCatalogPageSize")?.value) || 7);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  supplyCatalogPage = Math.min(Math.max(1, supplyCatalogPage), totalPages);
+  const visibleRows = rows.slice((supplyCatalogPage - 1) * pageSize, supplyCatalogPage * pageSize);
+  body.innerHTML = visibleRows.length ? visibleRows.map((item, index) => {
+    const names = item.projectNames || [];
+    const chips = names.slice(0, 2).map(name => `<span class="supply-project-chip"><span>${escapeHtml(name)}</span></span>`).join(" ");
+    const extra = names.length > 2 ? `<span class="supply-project-chip supply-project-chip-extra">+${names.length - 2}</span>` : "";
+    return `<tr><td data-label="#" class="supply-row-number">${(supplyCatalogPage - 1) * pageSize + index + 1}</td><td data-label="نوع التوريدة"><strong>${escapeHtml(item.type)}</strong></td><td data-label="الوحدة">${escapeHtml(item.unit)}</td><td data-label="تاريخ الإضافة">${fmtDisplayDate(item.createdAt)}</td><td data-label="المشروعات المرتبطة"><div class="supply-project-chips">${chips}${extra || (!names.length ? '<span class="text-muted">لا توجد مشروعات مرتبطة</span>' : "")}</div></td><td data-label="الإجراءات"><button type="button" class="supply-row-action" aria-label="ربط ${escapeHtml(item.type)} بمشروع" data-assign-supply="${escapeHtml(item.id)}">⋮</button></td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="supply-empty-state">${query ? 'لا توجد توريدات مطابقة للبحث.' : 'لا توجد توريدات مسجلة حتى الآن. أضيفي أول توريدة من النموذج أعلاه.'}</td></tr>`;
+  document.getElementById("suppliesGrandTotal").textContent = String(allRows.length);
+  document.getElementById("supplyCatalogCount").textContent = rows.length === 1 ? "توريدة واحدة" : rows.length === 2 ? "توريدتان" : `${rows.length} توريدات`;
+  renderSupplyCatalogPagination(totalPages);
+  body.querySelectorAll("[data-assign-supply]").forEach(button => button.addEventListener("click", () => {
+    setSupplyWorkspaceTab("assign");
+    const select = document.getElementById("supplyCatalogSelect");
+    select.value = button.dataset.assignSupply;
+    loadSupplyAssignmentDetail();
+  }));
+}
+
+function renderSupplyCatalogPagination(totalPages) {
+  const controls = document.getElementById("supplyCatalogPageControls");
+  if (!controls) return;
+  const first = Math.max(1, Math.min(supplyCatalogPage - 2, totalPages - 4));
+  const last = Math.min(totalPages, first + 4);
+  const pages = Array.from({ length: last - first + 1 }, (_, index) => first + index);
+  controls.innerHTML = `<button type="button" data-supply-page="${Math.max(1, supplyCatalogPage - 1)}" aria-label="الصفحة السابقة" ${supplyCatalogPage === 1 ? "disabled" : ""}>‹</button>${pages.map(page => `<button type="button" data-supply-page="${page}" class="${page === supplyCatalogPage ? "active" : ""}" aria-current="${page === supplyCatalogPage ? "page" : "false"}">${page}</button>`).join("")}<button type="button" data-supply-page="${Math.min(totalPages, supplyCatalogPage + 1)}" aria-label="الصفحة التالية" ${supplyCatalogPage === totalPages ? "disabled" : ""}>›</button>`;
+}
+
+async function saveSupplyFromPage() {
+  if (!assertCan("projects", "create", "إضافة توريدة")) return;
+  const type = document.getElementById("supplyType")?.value.trim();
+  const unit = document.getElementById("supplyUnit")?.value;
+  if (!type || !unit) { alert("يرجى إدخال نوع التوريدة واختيار وحدة القياس."); return; }
+  try {
+    await erpApi.supplyCatalog.create({ type, unit });
+    document.getElementById("supplyType").value = "";
+    document.getElementById("supplyUnit").value = "";
+    await loadSuppliesPage();
+  } catch (error) { alert("تعذر حفظ التوريدة: " + (error.message || "")); }
+}
+
+function setSupplyWorkspaceTab(tab) {
+  document.querySelectorAll("[data-supply-tab]").forEach(button => {
+    const active = button.dataset.supplyTab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-supply-panel]").forEach(panel => {
+    const active = panel.dataset.supplyPanel === tab;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+  document.getElementById("content-area")?.scrollTo({ top: 0, behavior: "auto" });
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+async function loadSupplyAssignmentDetail() {
+  const id = document.getElementById("supplyCatalogSelect")?.value;
+  const item = (state.supplyCatalog || []).find(row => row.id === id);
+  const summary = document.getElementById("supplyAssignmentSummary");
+  const allocationHost = document.getElementById("supplyProjectAllocations");
+  const history = document.getElementById("supplyAssignmentsHistory");
+  const saveButton = document.getElementById("btnSaveSupplyAssignments");
+  if (!item) {
+    summary.className = "supply-assignment-summary is-empty";
+    summary.innerHTML = '<span class="supply-summary-mark">i</span><span>اختر توريدة من القائمة لعرض بيانات الربط.</span>';
+    allocationHost.innerHTML = '<div class="supply-empty-state">اختر توريدة أولًا لبدء التوزيع.</div>';
+    history.innerHTML = '<div class="supply-empty-state">لم يتم اختيار توريدة بعد.</div>';
+    saveButton.disabled = true;
+    updateSupplyAssignmentTotal();
+    return;
+  }
+  const projects = state.projects || [];
+  let assignments = [];
+  try { assignments = await erpApi.supplyCatalog.assignments(id); }
+  catch (error) { history.innerHTML = `<div class="supply-empty-state supply-error">تعذر تحميل المشروعات المرتبطة: ${escapeHtml(error.message || "")}</div>`; }
+  const linkedSupplyItemIds = new Set(assignments.map(row => row.projectSupplyItemId));
+  const suppliedQty = assignments.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+  const withdrawnQty = (state.invoices || []).reduce((sum, invoice) => sum + (invoice.deductions || []).reduce((deductionSum, deduction) => deductionSum + (deduction.calcFromKeys || []).reduce((keySum, key) => {
+    const selection = parseSupplyDeductionKey(key);
+    return keySum + (selection && linkedSupplyItemIds.has(selection.projectSupplyItemId) ? selection.qty : 0);
+  }, 0), 0), 0);
+  summary.className = "supply-assignment-summary";
+  summary.innerHTML = `<span class="supply-summary-mark">✓</span><span class="supply-summary-details"><span class="supply-summary-heading"><strong>${escapeHtml(item.type)}</strong><small>الوحدة: ${escapeHtml(item.unit)} · أدخلي الكمية والسعر والتاريخ لكل مشروع.</small></span><span class="supply-summary-metrics"><span class="supply-summary-metric"><small>إجمالي الكمية الموردة</small><strong>${fmtNum(suppliedQty)} <small>${escapeHtml(item.unit)}</small></strong></span><span class="supply-summary-metric"><small>إجمالي المسحوب في المستخلصات</small><strong>${fmtNum(withdrawnQty)} <small>${escapeHtml(item.unit)}</small></strong></span></span></span>`;
+  const today = new Date();
+  const defaultSupplyDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  allocationHost.innerHTML = projects.length ? projects.map((project, index) => `<div class="supply-project-allocation-row"><label class="supply-allocation-select"><span class="supply-allocation-check"><input type="checkbox" data-project-allocation-check value="${escapeHtml(project.id)}"><span aria-hidden="true"></span></span><span class="supply-allocation-project"><strong>${escapeHtml(project.name)}</strong><small>${escapeHtml((state.owners || []).find(owner => owner.id === project.ownerId)?.name || "مشروع")}</small></span></label><div class="supply-allocation-qty"><label for="supply-project-qty-${index}">الكمية</label><span><input class="form-control" type="number" id="supply-project-qty-${index}" min="0" step="0.01" data-project-allocation-qty disabled placeholder="0.00"><small>${escapeHtml(item.unit)}</small></span></div><div class="supply-allocation-qty"><label for="supply-project-price-${index}">سعر الوحدة</label><span><input class="form-control" type="number" id="supply-project-price-${index}" min="0" step="0.01" data-project-allocation-price disabled placeholder="0.00"><small>جنيه</small></span></div><div class="supply-allocation-qty"><label for="supply-project-date-${index}">تاريخ التوريد</label><span><input class="form-control" type="date" id="supply-project-date-${index}" data-project-allocation-date disabled value="${defaultSupplyDate}"></span></div><div class="supply-project-line-total"><span>الإجمالي</span><strong data-project-allocation-total>0.00 جنيه</strong></div></div>`).join("") : '<div class="supply-empty-state">لا توجد مشروعات متاحة. أضيفي مشروعًا أولًا.</div>';
+  allocationHost.querySelectorAll("[data-project-allocation-check]").forEach(check => check.addEventListener("change", () => {
+    const input = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-qty]");
+    const price = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-price]");
+    const date = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-date]");
+    input.disabled = !check.checked;
+    price.disabled = !check.checked;
+    date.disabled = !check.checked;
+    if (!check.checked) { input.value = ""; price.value = ""; }
+    updateSupplyAssignmentTotal();
+  }));
+  document.getElementById("supplyAssignmentUnit").textContent = item.unit;
+  document.getElementById("supplyAssignmentValidation").textContent = "";
+  saveButton.disabled = false;
+  updateSupplyAssignmentTotal();
+  if (assignments.length) history.innerHTML = assignments.map(row => `<article class="supply-history-row"><span class="supply-history-project-mark">${escapeHtml((row.projectName || "م").trim().slice(0, 1))}</span><span class="supply-history-project"><strong>${escapeHtml(row.projectName)}</strong><small>${fmtDisplayDate(row.supplyDate || row.createdAt)}</small></span><b>${fmtNum(row.qty)} ${escapeHtml(item.unit)}</b></article>`).join("");
+  else if (!history.querySelector(".supply-error")) history.innerHTML = '<div class="supply-empty-state">لم يتم ربط هذه التوريدة بأي مشروع بعد.</div>';
+}
+
+function updateSupplyAssignmentTotal() {
+  const item = (state.supplyCatalog || []).find(row => row.id === document.getElementById("supplyCatalogSelect")?.value);
+  const checked = [...document.querySelectorAll("#supplyProjectAllocations [data-project-allocation-check]:checked")];
+  let total = 0;
+  let amount = 0;
+  let invalid = false;
+  const projectCount = checked.length;
+  checked.forEach(check => {
+    const input = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-qty]");
+    const qty = Number(input.value) || 0;
+    const priceInput = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-price]");
+    const price = Number(priceInput.value) || 0;
+    total += qty;
+    amount += qty * price;
+    check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-total]").textContent = `${fmtNum(qty * price)} جنيه`;
+    const dateInput = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-date]");
+    if (qty <= 0 || priceInput.value === "" || price < 0 || !dateInput.value) invalid = true;
+  });
+  document.getElementById("supplyAssignmentQtyTotal").textContent = fmtNum(total);
+  document.getElementById("supplyAssignmentValueTotal").textContent = fmtNum(amount);
+  document.getElementById("supplyAssignmentValidation").textContent = invalid ? "أدخلي كمية أكبر من صفر وسعر الوحدة لكل مشروع محدد." : projectCount ? `سيتم ربط ${fmtNum(total)} ${item?.unit || ""} بقيمة ${fmtNum(amount)} جنيه على ${projectCount} مشروع.` : "حددي مشروعًا واحدًا على الأقل.";
+  const save = document.getElementById("btnSaveSupplyAssignments");
+  if (save) save.disabled = !item || !projectCount || invalid;
+}
+
+function toggleAllSupplyProjects() {
+  const checks = [...document.querySelectorAll("#supplyProjectAllocations [data-project-allocation-check]")];
+  const select = checks.some(check => !check.checked);
+  checks.forEach(check => {
+    check.checked = select;
+    const input = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-qty]");
+    const price = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-price]");
+    const date = check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-date]");
+    input.disabled = !select;
+    price.disabled = !select;
+    date.disabled = !select;
+    if (!select) { input.value = ""; price.value = ""; }
+  });
+  updateSupplyAssignmentTotal();
+}
+
+async function saveSupplyAssignments() {
+  if (!assertCan("projects", "create", "توزيع التوريدة على المشروعات")) return;
+  const supplyId = document.getElementById("supplyCatalogSelect")?.value;
+  const assignments = [...document.querySelectorAll("#supplyProjectAllocations [data-project-allocation-check]:checked")].map(check => ({
+    projectId: check.value,
+    qty: Number(check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-qty]").value),
+    unitPrice: Number(check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-price]").value)
+    ,supplyDate: check.closest(".supply-project-allocation-row").querySelector("[data-project-allocation-date]").value
+  }));
+  if (!supplyId || !assignments.length || assignments.some(row => !(row.qty > 0) || !Number.isFinite(row.unitPrice) || row.unitPrice < 0 || !row.supplyDate)) return;
+  const button = document.getElementById("btnSaveSupplyAssignments");
+  button.disabled = true;
+  button.textContent = "جارٍ حفظ الربط…";
+  try {
+    await erpApi.supplyCatalog.assign(supplyId, assignments);
+    await loadSuppliesPage();
+    document.getElementById("supplyCatalogSelect").value = supplyId;
+    await loadSupplyAssignmentDetail();
+    document.getElementById("supplyAssignmentValidation").textContent = "تم ربط التوريدة بالمشروعات وحفظ البيانات.";
+  } catch (error) {
+    document.getElementById("supplyAssignmentValidation").textContent = error.message || "تعذر حفظ توزيع التوريدة.";
+    button.disabled = false;
+  } finally {
+    button.textContent = "حفظ ربط التوريدة";
+  }
 }
 
 function openProjectModal() {
@@ -29862,8 +30761,6 @@ function openProjectModal() {
   document.getElementById("projectName").value = "";
   setInputDate("projectStartDate", getTodayLocal());
   document.getElementById("projectStatus").value = "Active";
-  document.getElementById("projectSupplyRows").innerHTML = "";
-  updateProjectSupplyTotal();
   setSectorManagerCombobox(null);
   document.getElementById("lblProjectModal").innerText = "إضافة مشروع جديد";
   document.getElementById("modalProject").classList.add("active");
@@ -29881,18 +30778,6 @@ function editProject(id) {
   setInputDate("projectStartDate", p.startDate);
   document.getElementById("projectStatus").value = p.status || "Active";
   setSectorManagerCombobox(p.sectorManagerId || null);
-  document.getElementById("projectSupplyRows").innerHTML = "";
-  updateProjectSupplyTotal();
-  erpApi.projects.supplyItems(id).then(items => {
-    const host = document.getElementById("projectSupplyRows");
-    if (!host || document.getElementById("projectId").value !== id) return;
-    items.forEach(item => {
-      const row = document.createElement("div");
-      row.className = "project-existing-supply";
-      row.innerHTML = `<span><strong>${escapeHtml(item.description)}</strong><small>${fmtNum(item.qty)} ${escapeHtml(item.unit)} × ${fmtNum(item.unitPrice)} = ${fmtNum(item.total)}</small><small>المتاح: ${fmtNum(item.availableQty)} ${escapeHtml(item.unit)}</small></span>`;
-      host.appendChild(row);
-    });
-  }).catch(error => console.warn("Could not load project supplies", error));
   document.getElementById("lblProjectModal").innerText = "تعديل بيانات المشروع";
   document.getElementById("modalProject").classList.add("active");
   initFlatpickr();
@@ -29920,10 +30805,6 @@ async function saveProject() {
     return;
   }
 
-  let supplies;
-  try { supplies = collectProjectSupplyRows(); }
-  catch (error) { alert(error.message); return; }
-
   const dto = {
     id: id || null,
     ownerId,
@@ -29941,12 +30822,6 @@ async function saveProject() {
       const created = await erpApi.projects.create(dto);
       savedProjectId = created?.id || created?.Id;
       if (savedProjectId) document.getElementById("projectId").value = savedProjectId;
-    }
-    if (supplies.length && !savedProjectId) throw new Error("تم حفظ المشروع لكن تعذر تحديد رقمه لحفظ التوريدات.");
-    for (let index = 0; index < supplies.length; index++) {
-      await erpApi.projects.addSupplyItem(savedProjectId, supplies[index].payload);
-      supplies[index].row.remove();
-      updateProjectSupplyTotal();
     }
     await syncStateFromBackend();
   } catch (error) {
@@ -30159,7 +31034,7 @@ async function assignContractSupplies() {
   const contractId = document.getElementById("contractId")?.value;
   if (!contractId) return;
   const selected = [...document.querySelectorAll("[data-supply-choice]:checked")];
-  if (!selected.length) { alert("اختاري توريدة واحدة على الأقل."); return; }
+  if (!selected.length) { alert("اختر توريدة واحدة على الأقل."); return; }
   for (const checkbox of selected) {
     const qty = Number(checkbox.closest(".contract-supply-row")?.querySelector("[data-allocation-qty]")?.value);
     const item = activeContractSupplyItems.find(x => x.id === checkbox.dataset.id);
@@ -30652,7 +31527,12 @@ function calcInvoiceTotals() {
         currentComponents: currentComps,
       });
       let amt = 0;
-      if (type === "percent") {
+      const isMaterialsDeduction = card.querySelector(".ded-desc")?.selectedOptions?.[0]?.textContent.trim() === "خصم خامات";
+      if (isMaterialsDeduction) {
+        amt = getDeductionMaterialsAmount(card);
+        const totalLabel = card.querySelector(".ded-materials-total");
+        if (totalLabel) totalLabel.textContent = `إجمالي قيمة التوريدات المختارة: ${fmtNum(amt)}`;
+      } else if (type === "percent") {
         amt = base * (val / 100);
       } else {
         amt = val;
@@ -30929,6 +31809,7 @@ function addInvDeductionRow(data = null) {
   card.className = "deduction-card";
   card.setAttribute("data-ded-index", cardIndex);
   if (data && data.id) card.setAttribute("data-ded-id", data.id);
+  if (data?.calcFromKeys) card.dataset.supplySelections = JSON.stringify(data.calcFromKeys.map(parseSupplyDeductionKey).filter(Boolean));
   card.innerHTML = `
         <div class="deduction-card-header">
             <span class="deduction-card-number">📦 استقطاع #${cardIndex}</span>
@@ -30942,14 +31823,14 @@ function addInvDeductionRow(data = null) {
                     ${libInfo.library.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === libInfo.selectedId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}
                 </select>
             </div>
-            <div class="form-group">
+            <div class="form-group deduction-calc-type-group">
                 <label>النوع</label>
                 <select class="form-select ded-type">
                     <option value="percent" ${isPercent ? "selected" : ""}>نسبة %</option>
                     <option value="fixed" ${!isPercent ? "selected" : ""}>مبلغ ثابت</option>
                 </select>
             </div>
-            <div class="form-group span-full">
+            <div class="form-group span-full deduction-base-group">
                 <label>الحساب الأساسي (البنود المطلوب الحساب منها)</label>
                 <div class="ms-wrapper">
                     <button type="button" class="ms-btn">اختر البنود (<span class="ms-count">${selKeys.length}</span>)</button>
@@ -30973,11 +31854,12 @@ function addInvDeductionRow(data = null) {
                     </div>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group span-full ded-materials-panel" hidden><label>اختر التوريدات والكمية المطلوب خصمها</label><div class="ded-materials-list"></div><small class="ded-materials-total">إجمالي قيمة التوريدات المختارة: 0.00</small></div>
+            <div class="form-group deduction-manual-value-group">
                 <label>القيمة <span class="ded-val-label">(${isPercent ? "%" : "مبلغ ثابت"})</span></label>
                 <input type="number" step="any" class="form-control ded-val" value="${data ? (data.val !== undefined ? data.val : data.amount) || 0 : 0}">
             </div>
-            <div class="form-group">
+            <div class="form-group deduction-calculated-group">
                 <label>المبلغ المحسوب</label>
                 <div class="deduction-calculated-amount ded-amount">0.00</div>
             </div>
@@ -31011,6 +31893,7 @@ function addInvDeductionRow(data = null) {
       label.textContent = e.target.value === "percent" ? "%" : "مبلغ ثابت";
     calcInvoiceTotals();
   });
+  card.querySelector(".ded-desc").addEventListener("change", () => loadDeductionMaterials(card));
 
   // Bind refund toggle label
   card.querySelector(".ded-refund").addEventListener("change", (e) => {
@@ -31026,7 +31909,79 @@ function addInvDeductionRow(data = null) {
   card
     .querySelectorAll("input, select")
     .forEach((inp) => inp.addEventListener("input", calcInvoiceTotals));
+  if (card.querySelector(".ded-desc")?.selectedOptions?.[0]?.textContent.trim() === "خصم خامات") loadDeductionMaterials(card);
   calcInvoiceTotals();
+}
+
+async function loadDeductionMaterials(card) {
+  const panel = card.querySelector(".ded-materials-panel");
+  const list = card.querySelector(".ded-materials-list");
+  const name = card.querySelector(".ded-desc")?.selectedOptions?.[0]?.textContent.trim();
+  if (!panel || !list) return;
+  const isMaterials = name === "خصم خامات";
+  panel.hidden = !isMaterials;
+  card.classList.toggle("is-materials-deduction", isMaterials);
+  [".deduction-calc-type-group", ".deduction-base-group", ".deduction-manual-value-group"].forEach(selector => {
+    const field = card.querySelector(selector);
+    if (!field) return;
+    if (isMaterials) field.style.setProperty("display", "none", "important");
+    else field.style.removeProperty("display");
+  });
+  if (!isMaterials) { list.innerHTML = ""; calcInvoiceTotals(); return; }
+  const contract = state.contracts.find(c => c.id === document.getElementById("invContractId")?.value);
+  if (!contract) { list.innerHTML = '<div class="supply-empty-state">اختر العقد أولاً لعرض توريداته.</div>'; return; }
+  list.innerHTML = '<div class="supply-empty-state">جارٍ تحميل التوريدات...</div>';
+  try {
+    const invoiceId = document.getElementById("invoiceId")?.value;
+    const projectSupplies = await getProjectSupplyItems(contract.projectId);
+    const usedElsewhere = new Map();
+    (state.invoices || []).filter(inv => inv.id !== invoiceId).forEach(inv => {
+      const invContract = state.contracts.find(c => c.id === inv.contractId);
+      if (invContract?.projectId !== contract.projectId) return;
+      (inv.deductions || []).forEach(deduction => (deduction.calcFromKeys || []).map(parseSupplyDeductionKey).filter(Boolean).forEach(selection => usedElsewhere.set(selection.projectSupplyItemId, (usedElsewhere.get(selection.projectSupplyItemId) || 0) + selection.qty)));
+    });
+    const savedSelections = (() => { try { return JSON.parse(card.dataset.supplySelections || "[]"); } catch { return []; } })();
+    const savedBySupply = new Map(savedSelections.map(selection => [selection.projectSupplyItemId, selection.qty]));
+    const today = new Date();
+    const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const dueProjectSupplies = projectSupplies.filter(item => !item.supplyDate || String(item.supplyDate).slice(0, 10) <= todayDate);
+    const supplies = dueProjectSupplies.filter(item => item.qty - (usedElsewhere.get(item.id) || 0) + (savedBySupply.get(item.id) || 0) > 0);
+    list.innerHTML = supplies.length ? supplies.map(item => {
+      const available = Math.max(0, Number(item.qty) - (usedElsewhere.get(item.id) || 0) + (savedBySupply.get(item.id) || 0));
+    const savedQty = Math.round(Number(savedBySupply.get(item.id) || 0) * 100) / 100;
+      return `<div class="ded-material-row"><label class="ded-material-choice"><input class="ded-material-select" type="checkbox" data-supply-id="${escapeHtml(item.id)}" ${savedQty > 0 ? "checked" : ""}><span><strong>${escapeHtml(item.description)}</strong><small>${fmtNum(available)} ${escapeHtml(item.unit)} متاح على المشروع · ${fmtNum(item.unitPrice)} جنيه للوحدة</small></span></label><div class="ded-material-quantity"><label>الكمية</label><input class="form-control ded-material-qty" type="number" min="0" max="${available}" step="0.01" value="${savedQty || ""}" data-price="${Number(item.unitPrice)}" data-supply-id="${escapeHtml(item.id)}" data-supply-max="${available}" aria-label="الكمية المطلوب خصمها" ${savedQty > 0 ? "" : "disabled"}></div></div>`;
+    }).join("") : `<div class="supply-empty-state">${projectSupplies.some(item => item.supplyDate && String(item.supplyDate).slice(0, 10) > todayDate) && !dueProjectSupplies.length ? 'لا توجد توريدات مستحقة للخصم حتى تاريخ اليوم.' : 'لا توجد توريدات متاحة على هذا المشروع.'}</div>`;
+    list.querySelectorAll(".ded-material-select").forEach(check => check.addEventListener("change", () => {
+      const qtyInput = check.closest(".ded-material-row").querySelector(".ded-material-qty");
+      qtyInput.disabled = !check.checked;
+      if (!check.checked) qtyInput.value = "";
+      calcInvoiceTotals();
+    }));
+    list.querySelectorAll(".ded-material-qty").forEach(input => input.addEventListener("input", calcInvoiceTotals));
+  } catch (error) { list.innerHTML = `<div class="supply-empty-state supply-error">تعذر تحميل التوريدات: ${escapeHtml(error.message || "")}</div>`; }
+  calcInvoiceTotals();
+}
+
+function parseSupplyDeductionKey(value) {
+  if (typeof value !== "string" || !value.startsWith("supply:")) return null;
+  const [, encodedId, qtyText] = value.split(":");
+  const projectSupplyItemId = decodeURIComponent(encodedId || "");
+  const qty = Number(qtyText);
+  return projectSupplyItemId && Number.isFinite(qty) && qty > 0 ? { projectSupplyItemId, qty } : null;
+}
+
+function encodeSupplyDeductionKey(projectSupplyItemId, qty) {
+  return `supply:${encodeURIComponent(projectSupplyItemId)}:${qty}`;
+}
+
+function getDeductionMaterialsAmount(card) {
+  const amount = [...(card.querySelectorAll(".ded-material-select:checked") || [])].reduce((sum, check) => {
+    const input = check.closest(".ded-material-row")?.querySelector(".ded-material-qty");
+    const qty = Math.round((Number(input?.value) || 0) * 100) / 100;
+    const unitPrice = Math.round(((Number(input?.dataset.price) || 0) + Number.EPSILON) * 100) / 100;
+    return sum + qty * unitPrice;
+  }, 0);
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
 function toggleMultiSelect(btn) {
@@ -31111,6 +32066,10 @@ async function saveInvoice() {
       const selectedKeys = msBtn
         ? msBtn.getAttribute("data-selected")?.split(",").filter(Boolean)
         : [];
+      const isMaterialsDeduction = card.querySelector(".ded-desc")?.selectedOptions?.[0]?.textContent.trim() === "خصم خامات";
+      const supplySelections = isMaterialsDeduction
+        ? [...card.querySelectorAll(".ded-material-qty")].filter(input => Number(input.value) > 0).map(input => ({ projectSupplyItemId: input.dataset.supplyId, qty: Math.round(Number(input.value) * 100) / 100, max: Number(input.dataset.supplyMax) }))
+        : [];
       deductions.push({
         id: card.getAttribute("data-ded-id") || generateId(12),
         description:
@@ -31122,7 +32081,7 @@ async function saveInvoice() {
           card.querySelector(".ded-desc").value ||
           "",
         calcType: card.querySelector(".ded-type").value,
-        calcFromKeys: selectedKeys,
+        calcFromKeys: isMaterialsDeduction ? supplySelections.map(selection => encodeSupplyDeductionKey(selection.projectSupplyItemId, selection.qty)) : selectedKeys,
         val: parseFloat(card.querySelector(".ded-val").value) || 0,
         amount:
           parseFloat(
@@ -31130,8 +32089,27 @@ async function saveInvoice() {
               "0",
           ) || 0,
         isRefundable: card.querySelector(".ded-refund").checked,
+        supplySelections,
       });
     });
+
+  const requestedBySupply = new Map();
+  deductions.forEach(deduction => (deduction.supplySelections || []).forEach(selection => {
+    requestedBySupply.set(selection.projectSupplyItemId, (requestedBySupply.get(selection.projectSupplyItemId) || 0) + selection.qty);
+    if (selection.qty > selection.max) requestedBySupply.set(selection.projectSupplyItemId, Number.POSITIVE_INFINITY);
+  }));
+  if ([...requestedBySupply.values()].some(qty => !Number.isFinite(qty))) {
+    alert("الكمية المختارة من إحدى الخامات أكبر من المتاح في المشروع.");
+    return;
+  }
+  for (const [supplyId, requestedQty] of requestedBySupply) {
+    const inputs = [...document.querySelectorAll(`.ded-material-qty[data-supply-id="${CSS.escape(supplyId)}"]`)];
+    const allowedQty = Math.min(...inputs.map(input => Number(input.dataset.supplyMax) || 0));
+    if (requestedQty > allowedQty) {
+      alert("إجمالي الكمية المختارة من إحدى الخامات أكبر من المتاح في المشروع.");
+      return;
+    }
+  }
 
   const apiPayload = {
     id: id || null,
@@ -31162,10 +32140,12 @@ async function saveInvoice() {
   };
 
   try {
+    let savedInvoiceId = id;
     if (id) {
       await erpApi.invoices.update(id, apiPayload);
     } else {
-      await erpApi.invoices.create(apiPayload);
+      const created = await erpApi.invoices.create(apiPayload);
+      savedInvoiceId = created?.id;
     }
     await syncStateFromBackend();
   } catch (error) {

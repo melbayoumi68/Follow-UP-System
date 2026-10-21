@@ -1,7 +1,7 @@
 namespace InvoicesErp.DTOs;
 
 public record ProjectSupplyWriteDto(string Description, string Unit, decimal Qty, decimal UnitPrice, DateOnly SupplyDate, string? Note);
-public record ProjectSupplyItemDto(string Id, string ProjectId, string Description, string Unit, decimal Qty, decimal UnitPrice, decimal Total, decimal AllocatedQty, decimal AvailableQty, DateOnly SupplyDate, string? Note, DateTime CreatedAt, DateTime UpdatedAt);
+public record ProjectSupplyItemDto(string Id, string ProjectId, string Description, string Unit, decimal Qty, decimal UnitPrice, decimal Total, decimal AllocatedQty, decimal AvailableQty, DateOnly SupplyDate, string? Note, DateTime CreatedAt, DateTime UpdatedAt, string? SupplyCatalogItemId = null, string? SupplyStatus = null);
 public record ContractSupplyAllocationWriteDto(string ProjectSupplyItemId, decimal Qty);
 public record ContractSupplyAllocationDto(string Id, string ProjectSupplyItemId, string Description, string Unit, decimal SourceQty, decimal AvailableQty, decimal Qty, decimal UnitPrice, decimal Total, DateTime CreatedAt);
 

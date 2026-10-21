@@ -1,0 +1,329 @@
+/* Supplies reference design. All rules stay within this workspace. */
+#suppliesView {
+    --sp-ink: #111e42;
+    --sp-ink-soft: #334568;
+    --sp-primary: #253597;
+    --sp-primary-dark: #1f2d88;
+    --sp-primary-soft: #edf3ff;
+    --sp-muted: #75829d;
+    --sp-line: #dfe7f2;
+    --sp-line-soft: #e7edf6;
+    color: var(--sp-ink);
+}
+#suppliesView .sp-shell { gap: 26px; padding: 16px 2px 2px; }
+#suppliesView .sp-icon { width: 24px; height: 24px; flex: 0 0 24px; }
+#suppliesView .sp-hero { align-items: flex-start; padding: 0; gap: 24px; }
+#suppliesView .sp-hero-copy { flex: 1 1 280px; }
+#suppliesView .sp-eyebrow { font-size: .85rem; font-weight: 500; color: #6285ff; }
+#suppliesView .sp-eyebrow::before { width: 20px; }
+#suppliesView .sp-hero h2 { margin: 12px 0 0; font-size: 2rem; font-weight: 800; }
+#suppliesView .sp-hero-stats { grid-template-columns: repeat(2, minmax(200px, 235px)); gap: 16px; }
+#suppliesView .sp-stat { position: relative; min-height: 108px; gap: 1px; padding: 12px 18px 12px 74px; border-radius: 12px; background: #fff; box-shadow: 0 2px 5px #14244a06; }
+#suppliesView .sp-stat > span:not(.sp-stat-icon) { font-size: .9rem; font-weight: 600; }
+#suppliesView .sp-stat > strong { font-size: 1.9rem; color: var(--sp-ink); }
+#suppliesView .sp-stat > small { font-size: .85rem; }
+#suppliesView .sp-stat-accent > strong { color: #193bb4; }
+#suppliesView .sp-stat-icon { position: absolute; inset-inline-end: 16px; top: 13px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: #6186ed; background: #eef4ff; }
+#suppliesView .sp-stat:first-child .sp-stat-icon { color: #526988; }
+#suppliesView .sp-tabs { gap: 8px; padding: 8px 10px; border-radius: 14px; background: #fff; box-shadow: 0 3px 9px #13294b05; }
+#suppliesView .sp-tab { position: relative; gap: 14px; min-height: 76px; border: 0; border-radius: 10px; padding: 12px 18px; }
+#suppliesView .sp-tab.is-active { color: var(--sp-primary); background: linear-gradient(110deg,#f3f7ff,#edf3ff); box-shadow: none; }
+#suppliesView .sp-tab.is-active::after { content: ''; position: absolute; inset-inline: 2px; bottom: -3px; height: 3px; background: var(--sp-primary); border-radius: 0 0 6px 6px; }
+#suppliesView .sp-tab-icon { width: 46px; height: 46px; flex-basis: 46px; color: #586a89; background: #f6f8fc; }
+#suppliesView .sp-tab.is-active .sp-tab-icon { background: transparent; color: var(--sp-primary); }
+#suppliesView .sp-tab-icon svg { width: 26px; height: 26px; }
+#suppliesView .sp-tab-copy strong { font-size: 1rem; font-weight: 700; }
+#suppliesView .sp-tab-copy small { font-size: .86rem; color: #7383a4; }
+#suppliesView .sp-card { border-color: var(--sp-line); border-radius: 14px; box-shadow: 0 3px 7px #14244a06; }
+#suppliesView .sp-card-head { padding: 18px 20px; align-items: center; }
+#suppliesView .sp-card-title { gap: 10px; align-items: flex-start; }
+#suppliesView .sp-card-icon { width: 38px; height: 38px; flex-basis: 38px; color: #1756ed; border-radius: 11px; background: #f0f5ff; }
+#suppliesView .sp-card-title h3 { font-size: 1.18rem; font-weight: 750; color: var(--sp-ink); }
+#suppliesView .sp-card-title p { font-size: .87rem; color: #7f8ca6; }
+#suppliesView .sp-assign-layout { grid-template-columns: minmax(0,1fr) minmax(235px,270px); gap: 16px; align-items: stretch; }
+#suppliesView .sp-assign-main { gap: 14px; }
+#suppliesView .sp-supply-card .sp-card-head { padding-bottom: 14px; }
+#suppliesView .sp-supply-controls { display: grid; grid-template-columns: minmax(190px,1fr) minmax(0,2fr); align-items: center; gap: 20px; margin: 0 16px; padding: 16px; border: 1px solid #d3e1f5; border-radius: 12px; background: linear-gradient(115deg,#f7faff,#f5f9ff); }
+#suppliesView .sp-supply-controls > .sp-field > label { color: var(--sp-ink); font-size: 1rem; }
+#suppliesView .sp-summary:not(.is-empty) { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+#suppliesView .sp-summary.is-empty { border: 0; background: transparent; padding: 0; }
+#suppliesView .sp-summary-mark { display: none; }
+#suppliesView .sp-summary-metric { position: relative; min-width: 0; min-height: 74px; padding: 6px 42px 0 8px; border-inline-start: 1px solid #d9e4f4; text-align: center; align-content: center; gap: 5px; }
+#suppliesView .sp-metric-icon { position: absolute; inset-inline-start: 14px; top: 10px; color: #1554f5; }
+#suppliesView .sp-summary-metric > small { font-size: .87rem; font-weight: 500; }
+#suppliesView .sp-summary-metric > strong { display: flex; justify-content: center; align-items: baseline; gap: 8px; flex-wrap: wrap; color: var(--sp-ink); font-size: 1.7rem; font-weight: 750; }
+#suppliesView .sp-summary-metric strong small { font-size: .88rem; }
+#suppliesView .sp-shell .form-control,
+#suppliesView .sp-shell .form-select { min-height: 44px; border-radius: 8px; border-color: #d5dfef; font-size: .95rem; color: var(--sp-ink); box-shadow: 0 1px 2px #14244a03; }
+#suppliesView .sp-shell .form-control:focus,
+#suppliesView .sp-shell .form-select:focus { border-color: #839ae3; box-shadow: 0 0 0 3px #25359710; }
+#suppliesView .sp-shell .form-control:disabled { background: #f7f9fc; color: #a1acc1; border-color: #e1e8f3; opacity: 1; }
+#suppliesView .sp-shell .btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 48px; padding: 11px 25px; border: 1px solid #293795; border-radius: 10px; background: linear-gradient(115deg,#253795,#303f9d); color: #fff; font-size: 1rem; font-weight: 650; box-shadow: 0 2px 3px #2535970a; }
+#suppliesView .sp-shell .btn-primary:hover:not(:disabled) { background: #202f86; }
+#suppliesView .sp-projects-card { overflow: visible; }
+#suppliesView .sp-projects-head { border-radius: 14px 14px 0 0; }
+#suppliesView .sp-count { background: #eaf0f7; color: #29395f; font-size: .85rem; padding: 6px 14px; font-weight: 600; }
+#suppliesView .sp-head-actions .btn { font-size: .8rem; }
+#suppliesView .sp-project-item { padding: 16px 20px; border-top: 1px solid #e0e7f2; gap: 14px; }
+#suppliesView .sp-project-item.is-selected { background: linear-gradient(100deg,#f5f8ff,#edf3ff); box-shadow: none; }
+#suppliesView .sp-project-head { grid-template-columns: 24px 38px minmax(0,1fr); gap: 12px; }
+#suppliesView .sp-project-symbol { display: grid; place-items: center; width: 38px; height: 38px; color: #1556ed; background: #eff4ff; border-radius: 10px; }
+#suppliesView .sp-project-symbol .sp-icon { width: 23px; height: 23px; }
+#suppliesView .sp-project-title strong { font-size: 1rem; line-height: 1.6; }
+#suppliesView .sp-project-title small { font-size: .83rem; color: #8791a6; }
+#suppliesView .sp-check,
+#suppliesView .sp-check > span { width: 24px; height: 24px; border-radius: 6px; }
+#suppliesView .sp-check input:checked + span { background: #2542b7; border-color: #2542b7; box-shadow: 0 1px 2px #25359712; }
+#suppliesView .sp-project-item:not(.is-selected) .sp-project-fields { opacity: 1; }
+#suppliesView .sp-input.has-unit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    direction: rtl;
+    align-items: stretch;
+    border: 1px solid #d5dfef;
+    border-radius: 8px;
+    background: #fff;
+}
+#suppliesView .sp-input.has-unit .form-control {
+    min-width: 0;
+    width: 100%;
+    padding: .48rem .55rem;
+    border: 0;
+    border-radius: 0 7px 7px 0;
+    direction: ltr;
+    text-align: right;
+    box-shadow: none;
+    appearance: auto;
+}
+#suppliesView .sp-input.has-unit > small {
+    position: static;
+    inset: auto;
+    min-width: 0;
+    padding: 4px 6px;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    line-height: 1.4;
+    border-inline-start: 1px solid #e0e6f1;
+    font-size: .81rem;
+    color: #7987a2;
+}
+#suppliesView .sp-input.has-unit:focus-within {
+    border-color: #839ae3;
+    box-shadow: 0 0 0 3px #25359710;
+}
+#suppliesView .sp-input.has-unit:has(input:disabled) { background: #f7f9fc; border-color: #e1e8f3; }
+#suppliesView .sp-project-item[data-touched] .sp-field.is-invalid .sp-input.has-unit { border-color: #f87171; background: #fff8f8; }
+#suppliesView .sp-line-total strong { display: flex; flex-direction: column; gap: 2px; font-size: 1.1rem; color: var(--sp-ink); }
+#suppliesView .sp-line-total strong small { color: #7d89a3; font-size: .79rem; font-weight: 500; }
+#suppliesView .sp-dock { margin-top: 0; padding: 20px; background: linear-gradient(110deg,#fbfcff,#f4f7fc); border-radius: 0 0 14px 14px; gap: 14px; }
+#suppliesView .sp-kpis { flex: 1 1 430px; gap: 0; }
+#suppliesView .sp-kpis > div { position: relative; display: grid; grid-template-columns: 34px minmax(0,1fr); flex: 1 1 150px; min-width: 0; padding: 0 12px; border: 0; border-inline-end: 1px solid #dce4f1; border-radius: 0; background: transparent; gap: 8px; }
+#suppliesView .sp-kpis dt { font-size: .83rem; font-weight: 500; color: #7d89a3; }
+#suppliesView .sp-kpis dt { grid-column: 2; grid-row: 1; align-self: center; }
+#suppliesView .sp-kpis dd { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; min-width: 0; max-width: 100%; font-size: clamp(1.05rem, 2.1cqi, 1.45rem); color: var(--sp-ink); direction: rtl; text-align: start; white-space: normal; }
+#suppliesView .sp-kpis dd > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; direction: ltr; unicode-bidi: isolate; }
+#suppliesView .sp-kpis dd small { font-size: .85rem; font-weight: 500; }
+#suppliesView .sp-kpis .is-value { background: transparent; border-color: #dce4f1; }
+#suppliesView .sp-kpis .is-value dd { color: var(--sp-ink); }
+#suppliesView .sp-kpi-icon { position: static; grid-column: 1; grid-row: 1; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: #edf3ff; color: #1558f6; }
+#suppliesView .sp-dock-actions { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; }
+#suppliesView .sp-dock-actions [role="status"] { flex: 1 1 100%; max-width: 35ch; font-size: .78rem; }
+#suppliesView .sp-dock-actions [role="status"]:empty { display: none; }
+#suppliesView .sp-dock-actions .btn { min-height: 54px; }
+#suppliesView .sp-history { align-self: stretch; }
+#suppliesView .sp-history-head { display: flex; flex-direction: row; padding: 18px 16px 14px; align-items: flex-start; gap: 8px; }
+#suppliesView .sp-history-head h3 { font-size: 1rem; font-weight: 700; color: var(--sp-ink); }
+#suppliesView .sp-history-head p { font-size: .79rem; color: #8a95aa; }
+#suppliesView .sp-history-icon { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; color: #2761ef; background: #f1f5ff; }
+#suppliesView .sp-history-list { padding: 6px 12px 14px; gap: 10px; }
+#suppliesView .sp-history-row { grid-template-columns: 36px minmax(0,1fr); align-items: start; gap: 10px; padding: 16px 12px; border: 1px solid #e4eaf5; border-radius: 10px; background: #fff; }
+#suppliesView .sp-history-row:last-child { border-bottom: 1px solid #e4eaf5; }
+#suppliesView .sp-history-avatar { width: 36px; height: 36px; color: #2b5ce6; background: #f1f5ff; border-radius: 10px; }
+#suppliesView .sp-history-avatar .sp-icon { width: 21px; height: 21px; }
+#suppliesView .sp-history-info { gap: 7px; }
+#suppliesView .sp-history-info strong { font-size: .94rem; color: var(--sp-ink); }
+#suppliesView .sp-history-info b { color: #17852b; font-size: .91rem; }
+#suppliesView .sp-history-info small { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: .81rem; color: #8b99b1; }
+#suppliesView .sp-history-info small .sp-icon { width: 15px; height: 15px; flex-basis: 15px; }
+#suppliesView .sp-empty { padding: 14px; margin: 12px 16px; border-style: solid; background: #f8faff; font-size: .88rem; }
+#suppliesView .sp-empty strong { font-size: .9rem; font-weight: 500; }
+/* The add tab uses the same cards, input heights, indigo actions and table rhythm. */
+#suppliesView .sp-form-card { padding-bottom: 18px; }
+#suppliesView .sp-form-grid { grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); padding-inline: 20px; }
+#suppliesView .sp-form-actions { margin-inline: 20px; }
+#suppliesView .sp-form-note { color: #8490a8; flex-basis: 320px; }
+#suppliesView .sp-search { background: #f9fbff; border-color: #dde5f1; border-radius: 9px; }
+#suppliesView .sp-search input { color: var(--sp-ink); }
+#suppliesView table.data-table.sp-catalog-table thead th { background: #f4f7fc !important; color: var(--sp-ink) !important; border-color: #e3eaf5 !important; font-weight: 650 !important; padding-block: 16px !important; }
+#suppliesView table.data-table.sp-catalog-table tbody td { padding-block: 15px !important; border-color: #e5ebf5 !important; }
+#suppliesView table.data-table.sp-catalog-table tbody tr:nth-child(even) td { background: #f8faff; }
+#suppliesView .sp-row-action { color: #2f419f; border-color: #dce4f5; background: #f5f8ff; }
+#suppliesView .sp-table-foot { padding: 14px 18px; background: #fbfcff; border-radius: 0 0 14px 14px; }
+#suppliesView .sp-page-btn.is-active { background: var(--sp-primary); border-color: var(--sp-primary); }
+@container supply-assignment (min-width: 760px) {
+    #suppliesView .sp-allocation-head,
+    #suppliesView .sp-project-item { display: grid; grid-template-columns: minmax(215px,1.1fr) minmax(0,3fr); gap: 18px; align-items: center; }
+    #suppliesView .sp-allocation-head { padding: 15px 20px; background: #f5f8fd; border-color: #e1e8f4; color: var(--sp-ink); font-size: .92rem; }
+    #suppliesView .sp-allocation-head > div,
+    #suppliesView .sp-project-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)) minmax(78px,.65fr); gap: 14px; }
+    #suppliesView .sp-allocation-head > div > span { text-align: center; }
+    #suppliesView .sp-allocation-head small { display: block; margin-top: 3px; color: #8692a9; font-weight: 400; font-size: .8rem; }
+    #suppliesView .sp-project-fields { padding: 0; }
+    #suppliesView .sp-project-fields > .sp-field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    #suppliesView .sp-project-fields .sp-line-total { justify-content: center; text-align: center; }
+}
+@media (max-width: 1250px) {
+    #suppliesView .sp-assign-layout { grid-template-columns: minmax(0,1fr); }
+    #suppliesView .sp-history { order: 2; }
+    #suppliesView .sp-history-list { grid-template-columns: repeat(auto-fit,minmax(215px,1fr)); }
+}
+@media (max-width: 900px) {
+    #suppliesView .sp-hero-stats { flex: 1 1 100%; grid-template-columns: repeat(2,minmax(0,1fr)); }
+    #suppliesView .sp-supply-controls { grid-template-columns: minmax(0,1fr); gap: 14px; }
+    #suppliesView .sp-summary-metric:first-child { border-inline-start: 0; }
+    #suppliesView .sp-kpis { flex-basis: auto; width: 100%; }
+    #suppliesView .sp-dock-actions { width: 100%; }
+}
+@media (max-width: 720px) {
+    #suppliesView .sp-shell { gap: 16px; padding-top: 12px; }
+    #suppliesView .sp-hero h2 { font-size: 1.7rem; }
+    #suppliesView .sp-stat { min-height: 100px; padding: 12px; padding-inline-end: 56px; }
+    #suppliesView .sp-stat-icon { width: 34px; height: 34px; inset-inline-end: 10px; }
+    #suppliesView .sp-stat > span:not(.sp-stat-icon) { font-size: .8rem; }
+    #suppliesView .sp-stat strong { font-size: 1.6rem; }
+    #suppliesView .sp-stat > small { font-size: .76rem; }
+    #suppliesView .sp-tabs { display: grid; grid-template-columns: minmax(0,1fr); padding: 6px; }
+    #suppliesView .sp-tab { padding: 10px 12px; min-height: 66px; }
+    #suppliesView .sp-tab-copy strong { font-size: .93rem; }
+    #suppliesView .sp-tab-copy small { font-size: .77rem; }
+    #suppliesView .sp-card-head { padding: 16px; }
+    #suppliesView .sp-card-title h3 { font-size: 1.06rem; }
+    #suppliesView .sp-card-title p { font-size: .8rem; }
+    #suppliesView .sp-supply-controls { margin-inline: 12px; padding: 12px; }
+    #suppliesView .sp-summary:not(.is-empty) { gap: 8px; }
+    #suppliesView .sp-summary-metric { padding: 5px 8px; min-height: 70px; }
+    #suppliesView .sp-metric-icon { display: none; }
+    #suppliesView .sp-summary-metric > small { font-size: .78rem; }
+    #suppliesView .sp-summary-metric > strong { font-size: 1.4rem; }
+    #suppliesView .sp-project-item { padding: 14px; }
+    #suppliesView .sp-project-fields { padding-inline-start: 0; }
+    #suppliesView .sp-dock { padding: 16px; }
+    #suppliesView .sp-kpis { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,150px),1fr)); gap: 14px 0; }
+    #suppliesView .sp-kpis > div { padding: 0 8px; min-width: 0; }
+    #suppliesView .sp-kpi-icon { position: static; margin-bottom: 5px; width: 32px; height: 32px; }
+    #suppliesView .sp-kpi-icon .sp-icon { width: 20px; height: 20px; }
+    #suppliesView .sp-kpis dt { font-size: .73rem; }
+    #suppliesView .sp-kpis dd { font-size: 1.05rem; }
+    #suppliesView .sp-kpis dd small { font-size: .7rem; }
+    #suppliesView .sp-dock-actions { flex: 0 1 auto; align-items: stretch; }
+    #suppliesView .sp-dock-actions [role="status"] { flex: 0 1 auto; max-width: none; }
+    #suppliesView .sp-form-grid { grid-template-columns: minmax(0,1fr); padding-inline: 16px; }
+    #suppliesView .sp-form-actions { margin-inline: 16px; }
+    #suppliesView .sp-form-note { flex: 0 1 auto; }
+}
+
+/* Intrinsic sizing keeps units whole and large totals inside their own cells. */
+#suppliesView .sp-line-total { min-width: 0; max-width: 100%; }
+#suppliesView .sp-line-total strong,
+#suppliesView .sp-line-total [data-sa-total] { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+@container supply-assignment (max-width: 759px) {
+    #suppliesView .sp-project-fields { grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)); }
+    #suppliesView .sp-kpis { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,150px),1fr)); gap: 14px 0; }
+}
+
+/* Clear deduction type and material selection, limited to the invoice deductions. */
+#deductionCardsContainer .ded-desc {
+    min-height: 46px;
+    width: 100%;
+    min-width: 0;
+    border: 1.5px solid #9aaed0;
+    border-radius: 9px;
+    padding-block: 10px;
+    padding-inline-start: 12px;
+    font-size: .96rem;
+    color: #17324d;
+    background-color: #f8faff;
+}
+#deductionCardsContainer .ded-desc:focus { border-color: #253597; box-shadow: 0 0 0 3px #2535971c; }
+#deductionCardsContainer .is-materials-deduction .ded-desc { border-color: #7588cb; background-color: #eef3ff; font-weight: 650; }
+#deductionCardsContainer .ded-material-choice {
+    position: relative;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    touch-action: manipulation;
+}
+/* Style the actual checkbox so its visible bounds and focus target agree. */
+#deductionCardsContainer .ded-material-choice > input {
+    appearance: none;
+    position: static;
+    inset: auto;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    opacity: 1;
+    pointer-events: auto;
+    cursor: pointer;
+    border: 2px solid #788ba9;
+    border-radius: 6px;
+    background: #fff no-repeat center / 20px 20px;
+    box-shadow: 0 1px 2px #17324d0a;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+#deductionCardsContainer .ded-material-check { display: none; }
+#deductionCardsContainer .ded-material-choice > input:checked {
+    border-color: #253597;
+    background-color: #253597;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4 10-10'/%3E%3C/svg%3E");
+}
+#deductionCardsContainer .ded-material-choice > input:focus-visible { outline: 3px solid #a8b8f1; outline-offset: 3px; }
+#deductionCardsContainer .ded-material-choice > input:disabled { opacity: .5; cursor: not-allowed; }
+@media (hover: hover) {
+    #deductionCardsContainer .ded-material-choice:hover { background-color: #e7edfa; }
+    #deductionCardsContainer .ded-material-choice:hover > input:not(:disabled) { border-color: #253597; }
+}
+@media (pointer: coarse) {
+    #deductionCardsContainer .ded-material-choice { min-height: 48px; padding-block: 10px; }
+}
+#deductionCardsContainer .ded-material-row.is-selected { border-color: #a9b8e6; background: #eef3ff; box-shadow: inset -3px 0 0 #253597; }
+#deductionCardsContainer .ded-material-main strong { font-size: .94rem; }
+
+/* The summary remains a real RTL table: shared column widths align every cell. */
+#deductionCardsContainer .ded-materials-summary-table-wrap {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+}
+#deductionCardsContainer .ded-materials-summary-table {
+    width: 100%;
+    min-width: 520px;
+    table-layout: fixed;
+    direction: rtl;
+}
+#deductionCardsContainer .ded-materials-summary-table th,
+#deductionCardsContainer .ded-materials-summary-table td {
+    padding: 12px 10px;
+    text-align: center;
+    vertical-align: middle;
+    font-size: .85rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+#deductionCardsContainer .ded-materials-summary-table th:first-child,
+#deductionCardsContainer .ded-materials-summary-table td:first-child { text-align: start; }
+#deductionCardsContainer .ded-materials-summary-table th { color: #526789; font-weight: 650; background: #f6f8fc; }
+#deductionCardsContainer .ded-materials-summary-name { min-width: 0; color: #29445f; }
+#deductionCardsContainer .ded-materials-summary-number { white-space: normal; }
+#deductionCardsContainer .ded-materials-summary-value { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: 3px 5px; min-width: 0; }
+#deductionCardsContainer .ded-materials-summary-value b { max-width: 100%; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; unicode-bidi: isolate; font-weight: 700; }
+#deductionCardsContainer .ded-materials-summary-value small { font-size: .78rem; white-space: nowrap; color: #6b7e99; }

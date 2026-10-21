@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using InvoicesErp.Data;
 using InvoicesErp.Models;
 using InvoicesErp.DTOs;
+using System.Globalization;
 using System.Text.Json;
 using InvoicesErp.Auth;
 using InvoicesErp.Common;
@@ -60,6 +61,8 @@ public class InvoicesController(AppDbContext db) : ControllerBase
         "date" => desc
             ? q.OrderByDescending(x => x.Date)
             : q.OrderBy(x => x.Date),
+
+        _ => q
 };
 
         if (page is null)
@@ -102,6 +105,9 @@ public class InvoicesController(AppDbContext db) : ControllerBase
         var amountErr = ValidateInvoiceAmounts(dto);
         if (amountErr is not null)
             return BadRequest(new { success = false, message = amountErr });
+        var supplyErr = await ValidateMaterialsDeductions(dto, null, ct);
+        if (supplyErr is not null)
+            return BadRequest(new { success = false, message = supplyErr });
 
         var x = FromDto(dto);
         db.Invoices.Add(x);
@@ -126,6 +132,9 @@ public class InvoicesController(AppDbContext db) : ControllerBase
         var amountErrPut = ValidateInvoiceAmounts(dto);
         if (amountErrPut is not null)
             return BadRequest(new { success = false, message = amountErrPut });
+        var supplyErrPut = await ValidateMaterialsDeductions(dto, id, ct);
+        if (supplyErrPut is not null)
+            return BadRequest(new { success = false, message = supplyErrPut });
 
         x.ContractId = dto.ContractId;
         x.Number = dto.Number.Trim();
@@ -218,6 +227,138 @@ public class InvoicesController(AppDbContext db) : ControllerBase
                 CalcFromKeysJson = dd.CalcFromKeys == null ? null : JsonSerializer.Serialize(dd.CalcFromKeys)
             }).ToList()
         };
+    }
+
+    private const string MaterialsDeductionDescription = "خصم خامات";
+
+    private async Task<string?> ValidateMaterialsDeductions(
+        InvoiceDto dto,
+        string? currentInvoiceId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(dto.ContractId)) return null;
+
+        var projectId = await db.Contracts.AsNoTracking()
+            .Where(c => c.Id == dto.ContractId)
+            .Select(c => c.ProjectId)
+            .FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(projectId)) return null;
+
+        var requested = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var deduction in dto.Deductions ?? [])
+        {
+            if (!string.Equals(deduction.Description?.Trim(), MaterialsDeductionDescription, StringComparison.Ordinal))
+                continue;
+            foreach (var key in deduction.CalcFromKeys ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(key) || !key.StartsWith("supply:", StringComparison.Ordinal))
+                    continue;
+                if (!TryParseSupplyDeductionKey(key, out var supplyId, out var qty))
+                    return "توجد كمية غير صحيحة في توريدات خصم الخامات.";
+                requested[supplyId] = requested.GetValueOrDefault(supplyId) + qty;
+            }
+        }
+
+        if (requested.Count == 0) return null;
+
+        var supplyIds = requested.Keys.ToList();
+        var supplyItems = await db.ProjectSupplyItems.AsNoTracking()
+            .Where(s => s.ProjectId == projectId && supplyIds.Contains(s.Id))
+            .Select(s => new
+            {
+                s.Id, s.Description, s.Qty,
+                // حالة التوريدة في سجل التوريدات (null إذا لم تكن مرتبطة بسجل التوريدات)
+                SupplyStatus = db.SupplyCatalogAssignments.Where(a => a.ProjectSupplyItemId == s.Id)
+                    .Select(a => a.SupplyCatalogItem.Status).FirstOrDefault()
+            })
+            .ToListAsync(ct);
+        if (supplyItems.Count != requested.Count)
+            return "إحدى التوريدات المختارة غير مرتبطة بالمشروع.";
+
+        foreach (var item in supplyItems)
+        {
+            if (IsSupplyDisabled(item.SupplyStatus))
+                return $"التوريدة \"{item.Description}\" غير مفعّلة ولا يمكن إضافتها إلى خصم الخامات.";
+        }
+
+        var usageQuery =
+            from invoice in db.Invoices.AsNoTracking()
+            join contract in db.Contracts.AsNoTracking() on invoice.ContractId equals contract.Id
+            join deduction in db.InvoiceDeductions.AsNoTracking() on invoice.Id equals deduction.InvoiceId
+            where contract.ProjectId == projectId
+                && deduction.Description == MaterialsDeductionDescription
+                && deduction.CalcFromKeysJson != null
+                && deduction.CalcFromKeysJson != ""
+            select new { invoice.Id, deduction.CalcFromKeysJson };
+        if (!string.IsNullOrWhiteSpace(currentInvoiceId))
+            usageQuery = usageQuery.Where(row => row.Id != currentInvoiceId);
+
+        var usageRows = await usageQuery.ToListAsync(ct);
+        var used = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var row in usageRows)
+        {
+            string[]? keys;
+            try
+            {
+                keys = JsonSerializer.Deserialize<string[]>(row.CalcFromKeysJson!);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            foreach (var key in keys ?? [])
+            {
+                if (!TryParseSupplyDeductionKey(key, out var supplyId, out var qty)) continue;
+                if (!requested.ContainsKey(supplyId)) continue;
+                used[supplyId] = used.GetValueOrDefault(supplyId) + qty;
+            }
+        }
+
+        foreach (var item in supplyItems)
+        {
+            var available = item.Qty - used.GetValueOrDefault(item.Id);
+            if (available < 0) available = 0;
+            if (requested[item.Id] <= available) continue;
+            var allowed = available.ToString("0.##", CultureInfo.InvariantCulture);
+            return $"الكمية المسموحة من التوريدة \"{item.Description}\" هي {allowed} فقط.";
+        }
+
+        return null;
+    }
+
+    private static bool IsSupplyDisabled(string? status)
+    {
+        // التوريد مرتبطة بسجل التوريدات: الحالة إما "Active" أو "Inactive".
+        // أي حالة أخرى محفوظة تُعامل كغير مفعّلة حتى لا يتم تمرير بيانات غير معروفة.
+        if (string.IsNullOrWhiteSpace(status)) return false;
+        return !string.Equals(status.Trim(), "Active", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryParseSupplyDeductionKey(
+        string? value,
+        out string supplyId,
+        out decimal qty)
+    {
+        supplyId = "";
+        qty = 0m;
+        if (string.IsNullOrWhiteSpace(value) ||
+            !value.StartsWith("supply:", StringComparison.Ordinal))
+            return false;
+
+        var quantitySeparator = value.LastIndexOf(':');
+        if (quantitySeparator <= "supply:".Length) return false;
+
+        var encodedId = value["supply:".Length..quantitySeparator];
+        var quantityText = value[(quantitySeparator + 1)..];
+        if (string.IsNullOrWhiteSpace(encodedId)) return false;
+
+        try { supplyId = Uri.UnescapeDataString(encodedId); }
+        catch { supplyId = encodedId; }
+
+        return !string.IsNullOrWhiteSpace(supplyId)
+            && decimal.TryParse(quantityText, NumberStyles.Number, CultureInfo.InvariantCulture, out qty)
+            && qty > 0m;
     }
 
    private static string? ValidateInvoiceAmounts(InvoiceDto dto)

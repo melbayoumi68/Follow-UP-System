@@ -1,0 +1,279 @@
+<div id="suppliesView" class="page-view">
+    <div class="sp-shell">
+        <header class="sp-hero">
+            <div class="sp-hero-copy">
+                <span class="sp-eyebrow">إدارة التوريدات</span>
+                <h2>التوريدات</h2>
+            </div>
+            <div class="sp-hero-stats" aria-label="ملخص التوريدات">
+                <div class="sp-stat">
+                    <span class="sp-stat-icon" aria-hidden="true"><svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 7.5 8-4.5 8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9M8 5.3l8 4.5"/></svg></span>
+                    <span>أنواع التوريدات</span>
+                    <strong id="suppliesGrandTotal">0</strong>
+                    <small>توريدة مسجلة</small>
+                </div>
+                <div class="sp-stat sp-stat-accent">
+                    <span class="sp-stat-icon" aria-hidden="true"><svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="17" r="3"/><circle cx="17" cy="6" r="3"/><path d="m8 15 7-7"/></svg></span>
+                    <span>المشروعات المرتبطة</span>
+                    <strong id="suppliesProjectsGrandTotal">0</strong>
+                    <small>مشروع مستلم</small>
+                </div>
+            </div>
+        </header>
+
+        <nav class="sp-tabs" role="tablist" aria-label="أقسام إدارة التوريدات">
+            <button type="button" class="sp-tab is-active" id="supplyCatalogTab" role="tab" data-supply-tab="catalog" aria-controls="supplyCatalogPanel" aria-selected="true" tabindex="0">
+                <span class="sp-tab-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>
+                </span>
+                <span class="sp-tab-copy">
+                    <strong>إضافة التوريدات</strong>
+                    <small>تعريف نوع التوريدة ووحدتها ومراجعة السجل</small>
+                </span>
+            </button>
+            <button type="button" class="sp-tab" id="supplyAssignTab" role="tab" data-supply-tab="assign" aria-controls="supplyAssignPanel" aria-selected="false" tabindex="-1">
+                <span class="sp-tab-icon" aria-hidden="true">
+                    <svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="17" r="3"/><circle cx="17" cy="6" r="3"/><path d="m8 15 7-7"/></svg>
+                </span>
+                <span class="sp-tab-copy">
+                    <strong>ربط التوريدات بالمشروعات</strong>
+                    <small>اختيار المشروع وإدخال الكمية والسعر وتاريخ التوريد</small>
+                </span>
+            </button>
+        </nav>
+
+        <section class="sp-panel is-active" id="supplyCatalogPanel" role="tabpanel" aria-labelledby="supplyCatalogTab" data-supply-panel="catalog">
+            <div class="sp-catalog">
+                <form id="supplyCatalogForm" class="sp-card sp-form-card" novalidate>
+                    <div class="sp-card-head">
+                        <div class="sp-card-title">
+                            <span class="sp-card-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                            </span>
+                            <div>
+                                <h3>إضافة توريدة جديدة</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sp-form-grid">
+                        <div class="form-group">
+                            <label for="supplyType">نوع التوريدة <span class="sp-required" aria-hidden="true">*</span></label>
+                            <input class="form-control" id="supplyType" maxlength="120" placeholder="مثال: طوب أحمر، أسمنت، رمل" required aria-required="true" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="supplyUnit">وحدة القياس <span class="sp-required" aria-hidden="true">*</span></label>
+                            <select class="form-select" id="supplyUnit" required aria-required="true">
+                                <option value="" selected disabled>اختر وحدة القياس</option>
+                                <option value="عدد">عدد</option>
+                                <option value="قطعة">قطعة</option>
+                                <option value="شيكارة">شيكارة</option>
+                                <option value="كيس">كيس</option>
+                                <option value="طن">طن</option>
+                                <option value="كيلوجرام">كيلوجرام</option>
+                                <option value="جرام">جرام</option>
+                                <option value="متر">متر</option>
+                                <option value="متر طولي">متر طولي</option>
+                                <option value="متر مربع">متر مربع</option>
+                                <option value="متر مكعب">متر مكعب</option>
+                                <option value="لتر">لتر</option>
+                                <option value="جالون">جالون</option>
+                                <option value="لوح">لوح</option>
+                                <option value="لفة">لفة</option>
+                                <option value="كرتونة">كرتونة</option>
+                                <option value="نقلة">نقلة</option>
+                                <option value="طقم">طقم</option>
+                                <option value="يوم">يوم</option>
+                                <option value="ساعة">ساعة</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="sp-form-actions">
+                        <p class="sp-form-note">
+                            <span aria-hidden="true">ⓘ</span>
+                            بعد الإضافة يمكنك ربط التوريدة بمشروع أو أكثر وتحديد الكمية والسعر لكل مشروع.
+                        </p>
+                        <button type="submit" class="btn btn-primary" id="btnSaveSupply">
+                            <span aria-hidden="true">＋</span>
+                            إضافة التوريدة
+                        </button>
+                    </div>
+                    <p class="sp-form-status" id="supplyFormStatus" role="status" aria-live="polite"></p>
+                </form>
+
+                <section class="sp-card sp-table-card" aria-labelledby="supplyCatalogTitle">
+                    <div class="sp-card-head sp-table-head">
+                        <div class="sp-card-title">
+                            <span class="sp-card-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg>
+                            </span>
+                            <div>
+                                <h3 id="supplyCatalogTitle">سجل التوريدات</h3>
+                            </div>
+                        </div>
+                        <label class="sp-search" for="supplyCatalogSearch">
+                            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+                            <input id="supplyCatalogSearch" type="search" placeholder="ابحث في أنواع التوريدات..." autocomplete="off">
+                        </label>
+                        <span class="sp-count" id="supplyCatalogCount">0 توريدة</span>
+                    </div>
+
+                    <div class="sp-table-scroll data-table-wrapper">
+                        <table class="data-table sp-catalog-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">نوع التوريدة</th>
+                                    <th scope="col">الوحدة</th>
+                                    <th scope="col">تاريخ الإضافة</th>
+                                    <th scope="col">المشروعات المرتبطة</th>
+                                    <th scope="col">الحالة</th>
+                                    <th scope="col">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="suppliesTableBody">
+                                <tr><td colspan="7" class="sp-empty-cell">جارٍ تحميل سجل التوريدات...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="sp-table-foot sp-catalog-pagination">
+                        <label class="sp-page-size">
+                            <select id="supplyCatalogPageSize">
+                                <option value="7">7</option>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                            </select>
+                            <span>عدد العناصر في الصفحة</span>
+                        </label>
+                        <div class="sp-pagination" id="supplyCatalogPageControls"></div>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section class="sp-panel" id="supplyAssignPanel" role="tabpanel" aria-labelledby="supplyAssignTab" data-supply-panel="assign" hidden>
+
+            <div class="sp-assign-layout">
+                <div class="sp-assign-main">
+                    <section class="sp-card sp-supply-card" aria-labelledby="spSupplyTitle">
+                        <div class="sp-card-head">
+                            <div class="sp-card-title">
+                                <span class="sp-card-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>
+                                </span>
+                                <div>
+                                    <h3 id="spSupplyTitle">التوريدة المراد ربطها</h3>
+                                    <p>اختر التوريدة من سجل التوريدات لعرض بياناتها وإدارة ربطها.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sp-supply-controls">
+                            <div class="sp-field">
+                                <label for="supplyCatalogSelect">التوريدة</label>
+                                <select id="supplyCatalogSelect" class="form-select">
+                                    <option value="">اختر توريدة من السجل</option>
+                                </select>
+                            </div>
+                            <div id="supplyAssignmentSummary" class="sp-summary is-empty">
+                                <span class="sp-summary-mark" aria-hidden="true">i</span>
+                                <span>اختر توريدة لعرض ملخص الكميات.</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="sp-card sp-projects-card" aria-labelledby="spProjectsTitle">
+                        <div class="sp-card-head sp-projects-head">
+                            <div class="sp-card-title">
+                                <span class="sp-card-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6M8 10h.01M12 10h.01M16 10h.01"/></svg>
+                                </span>
+                                <div>
+                                    <h3 id="spProjectsTitle">المشروعات والكميات</h3>
+                                    <p>تحديد الكميات والأسعار وتاريخ التوريد للمشروعات المحددة.</p>
+                                </div>
+                            </div>
+                            <div class="sp-head-actions">
+                                <span class="sp-count" id="saSelectedCount">0 مشروع</span>
+                                <button type="button" class="btn btn-ghost btn-sm" id="btnSaClear" hidden>إزالة الكل</button>
+                            </div>
+                        </div>
+
+                        <div class="sp-quick" id="saQuickFill" hidden>
+                            <div class="sp-quick-title">
+                                <strong>تعبئة سريعة</strong>
+                                <span>تطبيق القيم على المشروعات المحددة</span>
+                            </div>
+                            <div class="sp-quick-fields">
+                                <div class="sp-field">
+                                    <label for="saQuickQty">الكمية</label>
+                                    <input class="form-control" type="number" id="saQuickQty" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                                </div>
+                                <div class="sp-field">
+                                    <label for="saQuickPrice">سعر الوحدة</label>
+                                    <input class="form-control" type="number" id="saQuickPrice" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                                </div>
+                                <div class="sp-field">
+                                    <label for="saQuickDate">تاريخ التوريد</label>
+                                    <input class="form-control" type="date" id="saQuickDate" lang="ar">
+                                </div>
+                                <button type="button" class="btn btn-secondary" id="btnSaQuickApply">تطبيق على الكل</button>
+                            </div>
+                        </div>
+
+                        <div id="supplyProjectAllocations" class="sp-project-list" aria-live="polite">
+                            <div class="sp-empty">
+                                <strong>اختر توريدة أولًا</strong>
+                                <span></span>
+                            </div>
+                        </div>
+
+                        <div class="sp-dock">
+                            <dl class="sp-kpis">
+                                <div>
+                                    <span class="sp-kpi-icon"><svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1"/></svg></span>
+                                    <dt>المشروعات المحددة</dt>
+                                    <dd id="supplyAssignmentCount">0</dd>
+                                </div>
+                                <div>
+                                    <span class="sp-kpi-icon"><svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 7.5 8-4.5 8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9M8 5.3l8 4.5"/></svg></span>
+                                    <dt>إجمالي الكمية</dt>
+                                    <dd><span id="supplyAssignmentQtyTotal">0.00</span> <small id="supplyAssignmentUnit"></small></dd>
+                                </div>
+                                <div class="is-value">
+                                    <span class="sp-kpi-icon"><svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 8H5a2 2 0 0 1 0-4h13v4M4 6v14h17V8M21 12h-6v5h6"/><path d="M17 14.5h1"/></svg></span>
+                                    <dt>إجمالي القيمة</dt>
+                                    <dd><span id="supplyAssignmentValueTotal">0.00</span> <small>جنيه</small></dd>
+                                </div>
+                            </dl>
+                            <div class="sp-dock-actions">
+                                <span id="supplyAssignmentValidation" role="status" aria-live="polite"></span>
+                                <button type="button" class="btn btn-primary" id="btnSaveSupplyAssignments" disabled><svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h13l4 4v14H3V3zM7 3v7h10V3M7 21v-7h10v7M13 4v4"/></svg><span>حفظ الربط</span></button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <aside class="sp-card sp-history" aria-labelledby="spHistoryTitle">
+                    <div class="sp-history-head">
+                        <span class="sp-history-icon" aria-hidden="true">
+                            <svg class="sp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg>
+                        </span>
+                        <div>
+                            <h3 id="spHistoryTitle">المشروعات المستلمة</h3>
+                            <p>التوريدات السابقة للتوريدة المحددة</p>
+                        </div>
+                    </div>
+                    <div id="supplyAssignmentsHistory" class="sp-history-list">
+                        <div class="sp-empty">
+                            <strong>لم يتم اختيار توريدة بعد</strong>
+                            <span>اختر توريدة لعرض المشروعات المرتبطة بها.</span>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+    </div>
+</div>
